@@ -1,5 +1,8 @@
-﻿using System.Text.Json;
+﻿using System.IO.Compression;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Xml;
+using System.Xml.Serialization;
 
 namespace BodsDotNet
 {
@@ -7,8 +10,9 @@ namespace BodsDotNet
     {
         private readonly string apiKey = apiKey;
         private readonly HttpClient httpClient = new();
+        private readonly XmlSerializer transXChangeSerializer = new(typeof(Schemas.TransXChange.TransXChange));
 
-        private static readonly JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions()
+        private static readonly JsonSerializerOptions jsonSerializerOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true,
@@ -34,6 +38,41 @@ namespace BodsDotNet
                 Schemas.Timetable.Timetable? response = await JsonSerializer.DeserializeAsync<Schemas.Timetable.Timetable>(stream, jsonSerializerOptions);
                 return response ?? throw new BodsRequestException("Server returned success, but failed to parse timetable data.", httpResponse.StatusCode);
             }
+        }
+
+        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromUrl(string url)
+        {
+            using HttpResponseMessage httpResponse = await httpClient.GetAsync(url);
+            httpResponse.EnsureSuccessStatusCode();
+
+            using Stream contentStream = await httpResponse.Content.ReadAsStreamAsync();
+            return await GetTransXChangeFromStream(contentStream);
+        }
+
+        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromFile(string filePath)
+        {
+            using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read);
+            return await GetTransXChangeFromStream(fs);
+        }
+
+        private async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromStream(Stream stream)
+        {
+            using ZipArchive zipArchive = new(stream, ZipArchiveMode.Read);
+            List<Schemas.TransXChange.TransXChange> txcs = [];
+
+            foreach (ZipArchiveEntry entry in zipArchive.Entries.OrderBy(e => e.FullName))
+            {
+                using Stream entryStream = entry.Open();
+                using MemoryStream memoryStream = new();
+                using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
+                await entryStream.CopyToAsync(memoryStream);
+                memoryStream.Seek(0, SeekOrigin.Begin);
+                Schemas.TransXChange.TransXChange txc = (Schemas.TransXChange.TransXChange?)transXChangeSerializer.Deserialize(entryReader)
+                    ?? throw new XmlException($"Failed to parse the TransXChange file at {entry.FullName}");
+                txcs.Add(txc);
+            }
+
+            return txcs;
         }
     }
 }

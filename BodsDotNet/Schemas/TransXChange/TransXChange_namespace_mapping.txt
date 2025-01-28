@@ -1,0 +1,8 @@
+http://www.transxchange.org.uk/ = BodsDotNet.Schemas.TransXChange
+http://www.naptan.org.uk/ = BodsDotNet.Schemas.TransXChange.Naptan
+http://www.w3.org/2001/XMLSchema = BodsDotNet.Schemas.TransXChange.Xml
+http://www.govtalk.gov.uk/people/AddressAndPersonalDetails = BodsDotNet.Schemas.TransXChange.People.AddressAndPersonalDetails
+http://www.govtalk.gov.uk/core = BodsDotNet.Schemas.TransXChange.Core
+http://www.govtalk.gov.uk/people/bs7666 = BodsDotNet.Schemas.TransXChange.People.Bs7666
+http://www.govtalk.gov.uk/people/PersonDescriptives = BodsDotNet.Schemas.TransXChange.People.PersonDescriptives
+= BodsDotNet.Schemas.TransXChange.Empty
