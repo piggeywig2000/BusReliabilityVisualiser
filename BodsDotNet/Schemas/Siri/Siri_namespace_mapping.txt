@@ -1,0 +1,5 @@
+http://datex2.eu/schema/2_0RC1/2_0 = BodsDotNet.Schemas.Siri.Datex2
+http://www.siri.org.uk/siri = BodsDotNet.Schemas.Siri
+http://www.ifopt.org.uk/ifopt = BodsDotNet.Schemas.Siri.Ifopt
+http://www.ifopt.org.uk/acsb = BodsDotNet.Schemas.Siri.Ifopt.Acsb
+http://www.w3.org/XML/1998/namespace = BodsDotNet.Schemas.Siri.Xml

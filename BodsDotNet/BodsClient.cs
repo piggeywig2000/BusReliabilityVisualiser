@@ -11,6 +11,7 @@ namespace BodsDotNet
         private readonly string apiKey = apiKey;
         private readonly HttpClient httpClient = new();
         private readonly XmlSerializer transXChangeSerializer = new(typeof(Schemas.TransXChange.TransXChange));
+        private readonly XmlSerializer siriSerializer = new(typeof(Schemas.Siri.Siri));
 
         private static readonly JsonSerializerOptions jsonSerializerOptions = new()
         {
@@ -73,6 +74,22 @@ namespace BodsDotNet
             }
 
             return txcs;
+        }
+
+        public async Task<Schemas.Siri.Siri> GetLocation(double minLongitude, double minLatitude, double maxLongitude, double maxLatitude, string[] operatorNocs, string line)
+        {
+            using HttpResponseMessage httpResponse = await httpClient.GetAsync($"https://data.bus-data.dft.gov.uk/api/v1/datafeed?boundingBox={minLongitude},{minLatitude},{maxLongitude},{maxLatitude}&operatorRef={string.Join(',', operatorNocs)}&lineRef={line}&api_key={apiKey}");
+            httpResponse.EnsureSuccessStatusCode();
+
+            Stream contentStream = await httpResponse.Content.ReadAsStreamAsync();
+            using MemoryStream memoryStream = new();
+            using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
+            await contentStream.CopyToAsync(memoryStream);
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            Schemas.Siri.Siri siri = (Schemas.Siri.Siri?)siriSerializer.Deserialize(entryReader)
+                ?? throw new XmlException($"Failed to parse Siri format");
+
+            return siri;
         }
     }
 }
