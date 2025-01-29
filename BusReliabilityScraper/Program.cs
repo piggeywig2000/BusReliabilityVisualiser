@@ -7,6 +7,54 @@ namespace BusReliabilityScraper
     {
         static async Task Main(string[] args)
         {
+            //await FetchVehiclesOnLine();
+            await LogPositions();
+        }
+
+        static async Task LogPositions()
+        {
+            const string API_KEY = "f3eb2d8601b48191874b770a833b29fc0238e1da";
+            const string BUS_LINE = "U1";
+
+            BodsClient bodsClient = new(API_KEY);
+            BodsDotNet.Schemas.Timetable.Timetable timetable = await bodsClient.GetTimetableById(5813);
+            Console.WriteLine(timetable.URL);
+
+            IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromUrl(timetable.URL);
+            TransXChange line = txcs
+                .Where(txc => txc.Services.Service.Any(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)))
+                .OrderByDescending(txc => txc.Services.Service.First(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)).OperatingPeriod.StartDate)
+                .First();
+
+            Console.WriteLine($"Found line {BUS_LINE}");
+
+            string[] blocks = line.VehicleJourneys.VehicleJourneySpecified ? line.VehicleJourneys.VehicleJourney
+                .Select(vj => vj.Operational.Block.BlockNumber).Distinct().ToArray() : [];
+
+            DateTime lastRecordedAt = DateTime.MinValue;
+            while (true)
+            {
+                BodsDotNet.Schemas.Siri.Siri location = await bodsClient.GetLocation(["FBRI"], BUS_LINE, blocks);
+
+                BodsDotNet.Schemas.Siri.VehicleActivityStructure? va = null;
+                if (location.ServiceDelivery.VehicleMonitoringDeliverySpecified && location.ServiceDelivery.VehicleMonitoringDelivery[0].VehicleActivitySpecified)
+                {
+                    va = location.ServiceDelivery.VehicleMonitoringDelivery[0].VehicleActivity.FirstOrDefault(va => va.MonitoredVehicleJourney.VehicleRef.Value == "FBRI-33948");
+                }
+
+                if (va != null && va.RecordedAtTime != lastRecordedAt)
+                {
+                    lastRecordedAt = va.RecordedAtTime;
+
+                    Console.WriteLine($"{lastRecordedAt},{va.MonitoredVehicleJourney.VehicleLocation.Longitude},{va.MonitoredVehicleJourney.VehicleLocation.Latitude}");
+                }
+
+                await Task.Delay(5000);
+            }
+        }
+
+        static async Task FetchVehiclesOnLine()
+        {
             const string API_KEY = "f3eb2d8601b48191874b770a833b29fc0238e1da";
             //const double BOUNDING_BOX_MARGIN = 0.01;
             const string BUS_LINE = "U1";
