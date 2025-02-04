@@ -39,11 +39,15 @@ namespace BusReliabilityScraper
                 .First(vj => vj.OperatingProfile.RegularDayType.DaysOfWeek.FridaySpecified && vj.DepartureTime.TimeOfDay == DEPARTURE);
 
             DateTime startTime = new DateOnly(2025, 1, 31).ToDateTime(TimeOnly.FromTimeSpan(vehicleJourney.DepartureTime.TimeOfDay));
+            LocationStructure locFrom = new()
+            {
+                LongitudeSpecified = false,
+                LatitudeSpecified = false
+            };
 
             // Find journey pattern section
-            foreach ((int indexJptl, JourneyPatternTimingLink jptl) in line.Services.Service[0].StandardService.JourneyPattern.First(jp => jp.Id == vehicleJourney.JourneyPatternRef).JourneyPatternSectionRefs
-                .SelectMany(jpsRef => line.JourneyPatternSections.JourneyPatternSection.First(jps => jps.Id == jpsRef.Value).JourneyPatternTimingLink)
-                .Index())
+            foreach (JourneyPatternTimingLink jptl in line.Services.Service[0].StandardService.JourneyPattern.First(jp => jp.Id == vehicleJourney.JourneyPatternRef).JourneyPatternSectionRefs
+                .SelectMany(jpsRef => line.JourneyPatternSections.JourneyPatternSection.First(jps => jps.Id == jpsRef.Value).JourneyPatternTimingLink))
             {
                 // Find related vehicle journey timing link to get timings
                 VehicleJourneyTimingLink vjtl = vehicleJourney.VehicleJourneyTimingLink.First(vjtl => vjtl.JourneyPatternTimingLinkRef.Value == jptl.Id);
@@ -55,16 +59,17 @@ namespace BusReliabilityScraper
                 RouteLink rl = routeLinks[jptl.RouteLinkRef.Value];
                 for (int i = 0; i < rl.Track[0].Mapping.Count; i++)
                 {
-                    if (indexJptl > 0 && i == 0) // Skip first point in each section as it'll be identical to previous
+                    // Skip if position identical to last
+                    LocationStructure locTo = rl.Track[0].Mapping[i];
+
+                    if (locFrom.LongitudeSpecified && locFrom.LatitudeSpecified && (double)locFrom.Longitude == (double)locTo.Longitude && (double)locFrom.Latitude == (double)locTo.Latitude)
                         continue;
 
                     DateTime trackTime = startTime + (((double)i / (double)rl.Track[0].Mapping.Count) * (endTime - startTime));
 
-                    LocationStructure locTo = rl.Track[0].Mapping[i];
                     int bearing = 0;
-                    if (i > 0)
+                    if (locFrom.LongitudeSpecified && locFrom.LatitudeSpecified) // Don't calculate if first point
                     {
-                        LocationStructure locFrom = rl.Track[0].Mapping[i - 1];
                         // Source: https://www.movable-type.co.uk/scripts/latlong.html
                         double y = Math.Sin((double)locTo.Longitude - (double)locFrom.Longitude) * Math.Cos((double)locTo.Latitude);
                         double x = Math.Cos((double)locFrom.Latitude) * Math.Sin((double)locTo.Latitude) -
@@ -74,6 +79,7 @@ namespace BusReliabilityScraper
                     }
 
                     Console.WriteLine($"<trkpt lat=\"{locTo.Latitude}\" lon=\"{locTo.Longitude}\"><ele>{bearing}</ele><time>{trackTime.ToString("o", CultureInfo.InvariantCulture)}</time></trkpt>");
+                    locFrom = locTo;
                 }
 
                 if (vjtl.To.WaitTimeSpecified)
