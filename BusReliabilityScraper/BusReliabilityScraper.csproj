@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="IeuanWalker.GeoUK" Version="1.0.5" />
+    <PackageReference Include="IeuanWalker.GeoUK.OSTN" Version="1.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\BodsDotNet\BodsDotNet.csproj" />
   </ItemGroup>
 

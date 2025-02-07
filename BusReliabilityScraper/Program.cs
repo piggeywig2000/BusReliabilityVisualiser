@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using BodsDotNet;
 using BodsDotNet.Schemas.TransXChange;
+using BusReliabilityScraper.Map;
 
 namespace BusReliabilityScraper
 {
@@ -10,7 +11,123 @@ namespace BusReliabilityScraper
         {
             //await FetchVehiclesOnLine();
             //await LogPositions();
-            await PrintRouteGPX("FBRI-BH_iAkTyiv_oVBjns3.zip");
+            //await PrintRouteGPX("FBRI-BH_iAkTyiv_oVBjns3.zip");
+            await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../../U1 Matched 3.gpx");
+        }
+
+        static async Task MatchRoute(string csvPath, string transXChangePath, string outputPath)
+        {
+            const string API_KEY = "f3eb2d8601b48191874b770a833b29fc0238e1da";
+            const string BUS_LINE = "U1";
+            TimeSpan DEPARTURE = new TimeSpan(15, 33, 0);
+            BodsClient bodsClient = new(API_KEY);
+
+            IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromFile(transXChangePath);
+            TransXChange line = txcs
+                .Where(txc => txc.Services.Service.Any(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)))
+                .OrderByDescending(txc => txc.Services.Service.First(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)).OperatingPeriod.StartDate)
+                .First();
+
+            Console.WriteLine($"Found line {BUS_LINE}");
+
+            VehicleJourney vehicleJourney = line.VehicleJourneys.VehicleJourney
+                .First(vj => vj.OperatingProfile.RegularDayType.DaysOfWeek.FridaySpecified && vj.DepartureTime.TimeOfDay == DEPARTURE);
+
+            Dictionary<string, RouteLink> routeLinks = line.RouteSections.RouteSection.SelectMany(rs => rs.RouteLink).ToDictionary(rl => rl.Id);
+            Dictionary<string, JourneyPatternSection> journeyPatternSections = line.JourneyPatternSections.JourneyPatternSection.ToDictionary(jps => jps.Id);
+            //Dictionary<string, VehicleJourneyTimingLink> jptlToVjtl = vehicleJourney.VehicleJourneyTimingLink.ToDictionary(vjtl => vjtl.JourneyPatternTimingLinkRef.Value);
+
+            // Read planned route
+            Map.Route plannedRoute = new();
+            foreach (JourneyPatternTimingLink jptl in line.Services.Service[0].StandardService.JourneyPattern.First(jp => jp.Id == vehicleJourney.JourneyPatternRef).JourneyPatternSectionRefs
+                .SelectMany(jpsRef => journeyPatternSections[jpsRef.Value].JourneyPatternTimingLink))
+            {
+                RouteLink rl = routeLinks[jptl.RouteLinkRef.Value];
+
+                if (!rl.TrackSpecified)
+                    throw new NotImplementedException();
+
+                foreach (LocationStructure loc in rl.Track.SelectMany(t => t.Mapping))
+                {
+                    Map.RoutePoint pnt = Map.RoutePoint.FromTransXChange(loc);
+                    if (plannedRoute.PointCount > 0 && pnt == plannedRoute.Points[plannedRoute.Points.Count - 1])
+                        continue; // Same position as last
+                    plannedRoute.AddPoint(pnt);
+                }
+            }
+            plannedRoute.CalculateBearings();
+
+            Console.WriteLine("Created planned route");
+
+            // Read actual route
+            Map.Route actualRoute = new();
+            using (StreamReader sr = new(csvPath, System.Text.Encoding.UTF8, true, new FileStreamOptions() { Access = FileAccess.Read, Mode = FileMode.Open }))
+            {
+                string? csvLine = await sr.ReadLineAsync();
+                while (!string.IsNullOrEmpty(csvLine))
+                {
+                    string[] csvParts = csvLine.Split(',');
+                    actualRoute.AddPoint(Map.RoutePoint.FromWGS84(double.Parse(csvParts[1]), double.Parse(csvParts[2]), double.Parse(csvParts[3])));
+                    csvLine = await sr.ReadLineAsync();
+                }
+            }
+
+            Console.WriteLine("Read actual route");
+
+            // Interpolate 0 values between other points
+            double? startVal = null;
+            int consecutiveBlanks = 0;
+            for (int i = 0; i <= actualRoute.Points.Count; i++)
+            {
+                double? bearing = i < actualRoute.Points.Count ? actualRoute.Points[i].Bearing : null;
+                bool isBlank = bearing == 0;
+                if (!isBlank && consecutiveBlanks == 0) // Set start val
+                    startVal = bearing;
+                if (isBlank) // Incremement consecutive blanks
+                    consecutiveBlanks++;
+
+                if (consecutiveBlanks > 0 && !isBlank) // Hit end of blanks, traverse back
+                {
+                    double? endVal = bearing;
+                    for (int j = 0; j < consecutiveBlanks; j++)
+                    {
+                        int i2 = i - consecutiveBlanks + j;
+                        double scaleFactor = (j + 1.0) / (consecutiveBlanks + 1.0);
+                        if (startVal == null)
+                            actualRoute.Points[i2].Bearing = endVal.GetValueOrDefault();
+                        else if (endVal == null)
+                            actualRoute.Points[i2].Bearing = startVal.GetValueOrDefault();
+                        else
+                        {
+                            bool doesWrapAround = Math.Abs(endVal.Value - startVal.Value) > 180; 
+                            if (doesWrapAround)
+                            {
+                                // We're wrapping around 0, bump up the one to the right of 0 to make it interpolate over 0
+                                if (startVal.Value < endVal.Value)
+                                    startVal += 360;
+                                else
+                                    endVal += 360;
+                            }
+                            actualRoute.Points[i2].Bearing = (startVal.Value + ((endVal.Value - startVal.Value) * scaleFactor)) % 360;
+                        }
+                    }
+                    startVal = bearing;
+                    consecutiveBlanks = 0;
+                }
+            }
+
+            Console.WriteLine("Interpolated bearings in actual route");
+
+            // Match actual route to planned route
+            foreach (RoutePoint actualPoint in actualRoute.Points)
+            {
+                actualPoint.MatchToRoute(plannedRoute);
+            }
+
+            Console.WriteLine("Matched actual route to planned route");
+
+            await File.WriteAllTextAsync(outputPath, actualRoute.GetGPX("U1 Matched 3"));
+            Console.WriteLine($"Wrote to {outputPath}");
         }
 
         static async Task PrintRouteGPX(string transXChangePath)
