@@ -12,10 +12,10 @@ namespace BusReliabilityScraper
             //await FetchVehiclesOnLine();
             //await LogPositions();
             //await PrintRouteGPX("FBRI-BH_iAkTyiv_oVBjns3.zip");
-            await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../../U1 Matched 3.gpx");
+            await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../../U1 Matched 3.gpx", "../../../../../U1 Unresolved 3.gpx");
         }
 
-        static async Task MatchRoute(string csvPath, string transXChangePath, string outputPath)
+        static async Task MatchRoute(string csvPath, string transXChangePath, string outputPath, string unresolvedOutputPath)
         {
             const string API_KEY = "f3eb2d8601b48191874b770a833b29fc0238e1da";
             const string BUS_LINE = "U1";
@@ -125,6 +125,12 @@ namespace BusReliabilityScraper
             }
 
             Console.WriteLine("Matched actual route to planned route");
+
+            await File.WriteAllTextAsync(unresolvedOutputPath, actualRoute.GetGPX("U1 Unresolved 3"));
+
+            actualRoute.ResolveOrder(plannedRoute);
+
+            Console.WriteLine("Resolved order");
 
             await File.WriteAllTextAsync(outputPath, actualRoute.GetGPX("U1 Matched 3"));
             Console.WriteLine($"Wrote to {outputPath}");

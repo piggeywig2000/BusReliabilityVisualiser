@@ -91,6 +91,21 @@ namespace BusReliabilityScraper.Map
             RouteDistance = closestStart.RouteDistance.LerpToUnclamped(closestEnd.RouteDistance, closestTValue);
         }
 
+        public void MovePositionFromRouteDistance(Route route)
+        {
+            int iPointBefore = 0;
+            for (int i = 0; i < route.PointCount && RouteDistance > route.Points[i].RouteDistance; i++)
+            {
+                iPointBefore = i;
+            }
+            int iPointAfter = iPointBefore + 1;
+
+            Point =
+                iPointBefore == -1 ? route.Points[iPointAfter].Point : (
+                iPointAfter == route.PointCount ? route.Points[iPointBefore].Point :
+                route.Points[iPointBefore].Point.LerpToUnclamped(route.Points[iPointAfter].Point, (RouteDistance - route.Points[iPointBefore].RouteDistance) / (route.Points[iPointAfter].RouteDistance - route.Points[iPointBefore].RouteDistance)));
+        }
+
         public override bool Equals(object? obj) => obj is RoutePoint rp && Equals(rp);
         public bool Equals(RoutePoint? other)
         {

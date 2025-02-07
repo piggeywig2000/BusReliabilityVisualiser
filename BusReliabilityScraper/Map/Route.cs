@@ -32,6 +32,83 @@ namespace BusReliabilityScraper.Map
             }
         }
 
+        public void ResolveOrder(Route plannedRoute)
+        {
+            int reorderAttemptsRemaining = 10000;
+            for (int iGoesBackwards = FindOutOfOrderIndex(); iGoesBackwards >= 0; iGoesBackwards = FindOutOfOrderIndex())
+            {
+                if (--reorderAttemptsRemaining < 0)
+                    throw new InvalidOperationException("Order resolution appears to be looping");
+
+                // Find where it starts going forwards along the route again
+                double lastRouteDistance = points[iGoesBackwards].RouteDistance;
+                int iGoesForwards = iGoesBackwards + 1;
+                while (iGoesForwards < points.Count && lastRouteDistance > points[iGoesForwards].RouteDistance)
+                {
+                    lastRouteDistance = points[iGoesForwards].RouteDistance;
+                    iGoesForwards++;
+                }
+
+                // Change to represent where it STARTS going backwards/forwards, not where it just has done
+                iGoesBackwards--;
+                iGoesForwards--;
+
+                // Try throwing away all points before where it starts going forwards,
+                // up until when the next point to throw away comes before where it starts going forwards
+                List<int> throwBeforeIndexes = [];
+                double distStartsGoingForwards = points[iGoesForwards].RouteDistance;
+                for (int i = iGoesForwards - 1; i >= 0 && points[i].RouteDistance > distStartsGoingForwards; i--)
+                {
+                    throwBeforeIndexes.Add(i);
+                }
+                throwBeforeIndexes.Sort();
+                double throwBeforeCost = throwBeforeIndexes
+                    .Zip(throwBeforeIndexes.Skip(1), (iFrom, iTo) => (iFrom, iTo))
+                    .Sum(p => Math.Abs(points[p.iTo].RouteDistance - points[p.iFrom].RouteDistance));
+
+                // Try throwing away all points after where it starts going backwards,
+                // up until when the next point to throw away comes after where it starts going backwards
+                List<int> throwAfterIndexes = [];
+                double distStartsGoingBackwards = points[iGoesBackwards].RouteDistance;
+                for (int i = iGoesBackwards + 1; i < points.Count && points[i].RouteDistance < distStartsGoingBackwards; i++)
+                {
+                    throwAfterIndexes.Add(i);
+                }
+                throwAfterIndexes.Sort();
+                double throwAfterCost = throwAfterIndexes
+                    .Zip(throwAfterIndexes.Skip(1), (iFrom, iTo) => (iFrom, iTo))
+                    .Sum(p => Math.Abs(points[p.iTo].RouteDistance - points[p.iFrom].RouteDistance));
+
+                // Throw away the points with the lowest cost, and re-distribute them evenly along the section
+                // TODO: Consider re-distributing based on how far each point travelled from the last
+                int throwRangeStart = (throwBeforeCost < throwAfterCost) ? throwBeforeIndexes[0] : throwAfterIndexes[0];
+                int throwRangeEnd = (throwBeforeCost < throwAfterCost) ? throwBeforeIndexes[^1] + 1 : throwAfterIndexes[^1] + 1; // exclusive
+                Console.WriteLine($"Throwing away {throwRangeEnd - throwRangeStart} points, from {throwRangeStart} to {throwRangeEnd}");
+
+                for (int i = throwRangeStart; i < throwRangeEnd; i++)
+                {
+                    points[i].RouteDistance =
+                        throwRangeStart == 0 ? points[throwRangeStart].RouteDistance : (
+                        throwRangeEnd == points.Count ? points[throwRangeEnd - 1].RouteDistance :
+                        points[throwRangeStart - 1].RouteDistance.LerpToUnclamped(points[throwRangeEnd].RouteDistance, (i - throwRangeStart + 1.0) / (throwRangeEnd - throwRangeStart + 1.0)));
+
+                    points[i].MovePositionFromRouteDistance(plannedRoute);
+                }
+            }
+        }
+
+        private int FindOutOfOrderIndex()
+        {
+            double lastRouteDistance = 0.0;
+            foreach ((int i, RoutePoint point) in points.Index())
+            {
+                if (point.RouteDistance < lastRouteDistance)
+                    return i;
+                lastRouteDistance = point.RouteDistance;
+            }
+            return -1;
+        }
+
         public string GetGPX(string name)
         {
             StringBuilder sb = new();
@@ -47,11 +124,11 @@ namespace BusReliabilityScraper.Map
             sb.AppendLine("\t<trk>");
             sb.AppendLine($"\t\t<name>{name}</name>");
             sb.AppendLine("\t\t<trkseg>");
-            foreach (RoutePoint point in points)
+            foreach ((int i, RoutePoint point) in points.Index())
             {
                 (double lon, double lat) = point.ToLonLat();
                 sb.AppendLine($"\t\t\t<trkpt lat=\"{lat}\" lon=\"{lon}\">");
-                sb.AppendLine($"\t\t\t\t<ele>{point.Bearing}</ele>");
+                sb.AppendLine($"\t\t\t\t<ele>{i}</ele>");
                 sb.AppendLine("\t\t\t</trkpt>");
             }
             sb.AppendLine("\t\t</trkseg>");
