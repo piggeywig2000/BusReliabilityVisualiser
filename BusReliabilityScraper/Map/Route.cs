@@ -109,7 +109,7 @@ namespace BusReliabilityScraper.Map
             return -1;
         }
 
-        public string GetGPX(string name)
+        public string GetGPX(string name, bool useWaypoints = false)
         {
             StringBuilder sb = new();
             sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -123,16 +123,25 @@ namespace BusReliabilityScraper.Map
             sb.AppendLine("\t</metadata>");
             sb.AppendLine("\t<trk>");
             sb.AppendLine($"\t\t<name>{name}</name>");
-            sb.AppendLine("\t\t<trkseg>");
+            if (useWaypoints)
+                sb.AppendLine("\t</trk>");
+            else
+                sb.AppendLine("\t\t<trkseg>");
             foreach ((int i, RoutePoint point) in points.Index())
             {
                 (double lon, double lat) = point.ToLonLat();
-                sb.AppendLine($"\t\t\t<trkpt lat=\"{lat}\" lon=\"{lon}\">");
-                sb.AppendLine($"\t\t\t\t<ele>{i}</ele>");
-                sb.AppendLine("\t\t\t</trkpt>");
+                sb.Append(useWaypoints ? "\t<wpt " : "\t\t\t<trkpt ");
+                sb.AppendLine($"lat=\"{lat}\" lon=\"{lon}\">");
+                sb.AppendLine($"{(useWaypoints ? "" : "\t\t")}\t\t<ele>{i}</ele>");
+                if (useWaypoints)
+                    sb.AppendLine($"\t\t<name>{name}-{i}</name>");
+                sb.AppendLine(useWaypoints ? "\t</wpt>" : "\t\t\t</trkpt>");
             }
-            sb.AppendLine("\t\t</trkseg>");
-            sb.AppendLine("\t</trk>");
+            if (!useWaypoints)
+            {
+                sb.AppendLine("\t\t</trkseg>");
+                sb.AppendLine("\t</trk>");
+            }
             sb.AppendLine("</gpx>");
             return sb.ToString();
         }

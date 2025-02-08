@@ -126,13 +126,13 @@ namespace BusReliabilityScraper
 
             Console.WriteLine("Matched actual route to planned route");
 
-            await File.WriteAllTextAsync(unresolvedOutputPath, actualRoute.GetGPX("U1 Unresolved 3"));
+            await File.WriteAllTextAsync(unresolvedOutputPath, actualRoute.GetGPX("U1 Unresolved 3", true));
 
             actualRoute.ResolveOrder(plannedRoute);
 
             Console.WriteLine("Resolved order");
 
-            await File.WriteAllTextAsync(outputPath, actualRoute.GetGPX("U1 Matched 3"));
+            await File.WriteAllTextAsync(outputPath, actualRoute.GetGPX("U1 Matched 3", true));
             Console.WriteLine($"Wrote to {outputPath}");
         }
 
