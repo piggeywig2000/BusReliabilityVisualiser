@@ -22,6 +22,6 @@ namespace BusReliabilityScraper
         public static double LerpToUnclamped(this double thisVal, double other, double t)
             => thisVal + ((other - thisVal) * t);
         public static double LerpTo(this double thisVal, double other, double t)
-            => thisVal.LerpTo(other, t.Clamp01());
+            => thisVal.LerpToUnclamped(other, t.Clamp01());
     }
 }
