@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using GeoUK.Coordinates;
 
 namespace BusReliabilityScraper.Map
 {
@@ -24,6 +25,13 @@ namespace BusReliabilityScraper.Map
             // Bearing is 0 when north, goes clockwise to 360. ATan2 is -PI when west, goes anticlockwise to PI.
             => ((-Math.Atan2(to.Northing - from.Northing, to.Easting - from.Easting) + (2.5 * Math.PI)) % (2 * Math.PI)) * (180 / Math.PI);
         public double BearingTo(Point other) => CalculateBearing(this, other);
+
+        public (double, double) ToLonLat()
+        {
+            Osgb36 easNor = new(Easting, Northing);
+            LatitudeLongitude latLong = GeoUK.OSTN.Transform.OsgbToEtrs89(easNor);
+            return (latLong.Longitude, latLong.Latitude);
+        }
 
         public override bool Equals([NotNullWhen(true)] object? obj) => obj is Point point && Equals(point);
         public bool Equals(Point other) => Easting == other.Easting && Northing == other.Northing;

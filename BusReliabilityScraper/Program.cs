@@ -1,7 +1,6 @@
 ﻿using System.Globalization;
 using BodsDotNet;
 using BodsDotNet.Schemas.TransXChange;
-using BusReliabilityScraper.Map;
 
 namespace BusReliabilityScraper
 {
@@ -12,14 +11,16 @@ namespace BusReliabilityScraper
             //await FetchVehiclesOnLine();
             //await LogPositions();
             //await PrintRouteGPX("FBRI-BH_iAkTyiv_oVBjns3.zip");
-            await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../../U1 Matched 3.gpx", "../../../../../U1 Unresolved 3.gpx");
+            await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../..");
         }
 
-        static async Task MatchRoute(string csvPath, string transXChangePath, string outputPath, string unresolvedOutputPath)
+        static async Task MatchRoute(string csvPath, string transXChangePath, string outputPath)
         {
             const string API_KEY = "f3eb2d8601b48191874b770a833b29fc0238e1da";
             const string BUS_LINE = "U1";
+            DateOnly DEPARTURE_DATE = new DateOnly(2025, 01, 31);
             TimeSpan DEPARTURE = new TimeSpan(15, 33, 0);
+            double BUFFER_DISTANCE = 50;
             BodsClient bodsClient = new(API_KEY);
 
             IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromFile(transXChangePath);
@@ -33,27 +34,47 @@ namespace BusReliabilityScraper
             VehicleJourney vehicleJourney = line.VehicleJourneys.VehicleJourney
                 .First(vj => vj.OperatingProfile.RegularDayType.DaysOfWeek.FridaySpecified && vj.DepartureTime.TimeOfDay == DEPARTURE);
 
+            Dictionary<string, AnnotatedStopPointRef> stopPoints = line.StopPoints.AnnotatedStopPointRef.ToDictionary(sp => sp.StopPointRef);
             Dictionary<string, RouteLink> routeLinks = line.RouteSections.RouteSection.SelectMany(rs => rs.RouteLink).ToDictionary(rl => rl.Id);
             Dictionary<string, JourneyPatternSection> journeyPatternSections = line.JourneyPatternSections.JourneyPatternSection.ToDictionary(jps => jps.Id);
-            //Dictionary<string, VehicleJourneyTimingLink> jptlToVjtl = vehicleJourney.VehicleJourneyTimingLink.ToDictionary(vjtl => vjtl.JourneyPatternTimingLinkRef.Value);
+            Dictionary<string, VehicleJourneyTimingLink> jptlToVjtl = vehicleJourney.VehicleJourneyTimingLink.ToDictionary(vjtl => vjtl.JourneyPatternTimingLinkRef.Value);
 
             // Read planned route
             Map.Route plannedRoute = new();
+            DateTime departureTime = DEPARTURE_DATE.ToDateTime(TimeOnly.FromTimeSpan(vehicleJourney.DepartureTime.TimeOfDay));
             foreach (JourneyPatternTimingLink jptl in line.Services.Service[0].StandardService.JourneyPattern.First(jp => jp.Id == vehicleJourney.JourneyPatternRef).JourneyPatternSectionRefs
                 .SelectMany(jpsRef => journeyPatternSections[jpsRef.Value].JourneyPatternTimingLink))
             {
                 RouteLink rl = routeLinks[jptl.RouteLinkRef.Value];
+                VehicleJourneyTimingLink vjtl = jptlToVjtl[jptl.Id];
 
                 if (!rl.TrackSpecified)
                     throw new NotImplementedException();
 
+                if (vjtl.From.WaitTimeSpecified)
+                    departureTime += vjtl.From.WaitTime;
+
+                // Create or amend From stop
+                if (plannedRoute.StopCount == 0 || plannedRoute.Stops[^1].Ref != jptl.From.StopPointRef.Value)
+                    plannedRoute.AppendBusStop(jptl.From.StopPointRef.Value, stopPoints[jptl.From.StopPointRef.Value].CommonName.Value, departureTime);
+                else
+                    plannedRoute.Stops[^1].DepartureTime = departureTime;
+
+                // Insert track points
                 foreach (LocationStructure loc in rl.Track.SelectMany(t => t.Mapping))
                 {
                     Map.RoutePoint pnt = Map.RoutePoint.FromTransXChange(loc);
-                    if (plannedRoute.PointCount > 0 && pnt == plannedRoute.Points[plannedRoute.Points.Count - 1])
+                    if (plannedRoute.PointCount > 0 && pnt == plannedRoute.Points[^1])
                         continue; // Same position as last
-                    plannedRoute.AddPoint(pnt);
+                    plannedRoute.AppendPoint(pnt);
                 }
+
+                departureTime += vjtl.RunTime;
+                if (vjtl.To.WaitTimeSpecified)
+                    departureTime += vjtl.To.WaitTime;
+
+                // Create To stop
+                plannedRoute.AppendBusStop(jptl.To.StopPointRef.Value, stopPoints[jptl.To.StopPointRef.Value].CommonName.Value, departureTime);
             }
             plannedRoute.CalculateBearings();
 
@@ -67,10 +88,14 @@ namespace BusReliabilityScraper
                 while (!string.IsNullOrEmpty(csvLine))
                 {
                     string[] csvParts = csvLine.Split(',');
-                    actualRoute.AddPoint(Map.RoutePoint.FromWGS84(double.Parse(csvParts[1]), double.Parse(csvParts[2]), double.Parse(csvParts[3])));
+                    Map.RoutePoint point = Map.RoutePoint.FromWGS84(double.Parse(csvParts[1]), double.Parse(csvParts[2]), double.Parse(csvParts[3]));
+                    point.Time = DateTime.Parse(csvParts[0]);
+                    actualRoute.AppendPoint(point);
                     csvLine = await sr.ReadLineAsync();
                 }
             }
+            foreach (Map.Stop stop in plannedRoute.Stops)
+                actualRoute.InsertBusStop(stop.Ref, stop.Name, stop.RouteDistance, stop.Point, stop.DepartureTime);
 
             Console.WriteLine("Read actual route");
 
@@ -119,20 +144,21 @@ namespace BusReliabilityScraper
             Console.WriteLine("Interpolated bearings in actual route");
 
             // Match actual route to planned route
-            foreach (RoutePoint actualPoint in actualRoute.Points)
+            foreach (Map.RoutePoint actualPoint in actualRoute.Points)
             {
                 actualPoint.MatchToRoute(plannedRoute);
             }
-
             Console.WriteLine("Matched actual route to planned route");
 
-            await File.WriteAllTextAsync(unresolvedOutputPath, actualRoute.GetGPX("U1 Unresolved 3", true));
-
             actualRoute.ResolveOrder(plannedRoute);
-
             Console.WriteLine("Resolved order");
 
-            await File.WriteAllTextAsync(outputPath, actualRoute.GetGPX("U1 Matched 3", true));
+            actualRoute.SetStopTimeFromPoints(BUFFER_DISTANCE);
+            Console.WriteLine("Calculated actual stop time");
+
+            await File.WriteAllTextAsync($"{outputPath}/U1 Planned 3.gpx", plannedRoute.GetStopsGPX("U1 Planned 3", true));
+            await File.WriteAllTextAsync($"{outputPath}/U1 Actual 3.gpx", actualRoute.GetStopsGPX("U1 Actual 3", true));
+            await File.WriteAllTextAsync($"{outputPath}/U1 Route 3.gpx", actualRoute.GetPointsGPX("U1 Route 3", true));
             Console.WriteLine($"Wrote to {outputPath}");
         }
 

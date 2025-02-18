@@ -1,24 +1,44 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
+using BodsDotNet.Schemas.TransXChange;
 
 namespace BusReliabilityScraper.Map
 {
     internal class Route
     {
         private readonly List<RoutePoint> points = [];
+        private readonly List<Stop> stops = [];
 
         public Route() { }
 
         public IReadOnlyList<RoutePoint> Points => points;
+        public IReadOnlyList<Stop> Stops => stops;
         public double Distance => points.Count > 0 ? points.Last().RouteDistance : 0;
         public int PointCount => points.Count;
+        public int StopCount => stops.Count;
 
-        public void AddPoint(RoutePoint point)
+        public void AppendPoint(RoutePoint point)
         {
             RoutePoint? lastPoint = points.LastOrDefault();
             if (lastPoint != null)
                 point.RouteDistance = lastPoint.RouteDistance + point.Point.DistanceTo(lastPoint.Point);
 
             points.Add(point);
+
+            if (stops.Count > 0 && stops[0].Point == new Point(0, 0))
+                stops[0].Point = point.Point;
+        }
+
+        public void AppendBusStop(string @ref, string name, DateTime departureTime)
+        {
+            RoutePoint? lastPoint = points.LastOrDefault();
+            stops.Add(new(@ref, name, lastPoint?.RouteDistance ?? 0, lastPoint?.Point ?? new(), departureTime));
+        }
+
+        public void InsertBusStop(string @ref, string name, double routeDistance, Point point, DateTime departureTime)
+        {
+            stops.Add(new(@ref, name, routeDistance, point, departureTime));
+            stops.Sort((s1, s2) => s1.RouteDistance.CompareTo(s2.RouteDistance));
         }
 
         public void CalculateBearings()
@@ -125,7 +145,47 @@ namespace BusReliabilityScraper.Map
             return -1;
         }
 
-        public string GetGPX(string name, bool useWaypoints = false)
+        public int GetIndexOfPointBefore(double routeDistance)
+        {
+            for (int i = 0; i < PointCount; i++)
+            {
+                if (routeDistance <= points[i].RouteDistance)
+                    return i - 1; // We've gone past the distance
+            }
+            return PointCount - 1;
+        }
+
+        public Point GetPositionAtDistance(double routeDistance)
+        {
+            int iPointBefore = GetIndexOfPointBefore(routeDistance);
+            int iPointAfter = iPointBefore + 1;
+
+            return
+                iPointBefore == -1 ? points[iPointAfter].Point : (
+                iPointAfter == PointCount ? points[iPointBefore].Point :
+                points[iPointBefore].Point.LerpToUnclamped(points[iPointAfter].Point, (routeDistance - points[iPointBefore].RouteDistance) / (points[iPointAfter].RouteDistance - points[iPointBefore].RouteDistance)));
+        }
+
+        public void SetStopTimeFromPoints(double bufferDistance)
+        {
+            foreach (Stop stop in stops)
+            {
+                double distance = stop.RouteDistance + bufferDistance;
+                int iPointBefore = GetIndexOfPointBefore(distance);
+                int iPointAfter = iPointBefore + 1;
+
+                stop.DepartureTime =
+                    iPointBefore == -1 ? points[iPointAfter].Time : (
+                    iPointAfter == PointCount ? points[iPointBefore].Time :
+                    points[iPointBefore].Time + (
+                        (points[iPointAfter].Time - points[iPointBefore].Time) *
+                            ((distance - points[iPointBefore].RouteDistance) / (points[iPointAfter].RouteDistance - points[iPointBefore].RouteDistance))
+                        )
+                    );
+            }
+        }
+
+        public string GetPointsGPX(string name, bool useWaypoints = false)
         {
             StringBuilder sb = new();
             sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -137,24 +197,83 @@ namespace BusReliabilityScraper.Map
             sb.AppendLine("\t\t\t<link href=\"https://gpx.studio\"/>");
             sb.AppendLine("\t\t</author>");
             sb.AppendLine("\t</metadata>");
-            sb.AppendLine("\t<trk>");
-            sb.AppendLine($"\t\t<name>{name}</name>");
             if (useWaypoints)
+            {
+                sb.AppendLine("\t<trk>");
+                sb.AppendLine($"\t\t<name>{name}</name>");
                 sb.AppendLine("\t</trk>");
-            else
-                sb.AppendLine("\t\t<trkseg>");
-            foreach ((int i, RoutePoint point) in points.Index())
-            {
-                (double lon, double lat) = point.ToLonLat();
-                sb.Append(useWaypoints ? "\t<wpt " : "\t\t\t<trkpt ");
-                sb.AppendLine($"lat=\"{lat}\" lon=\"{lon}\">");
-                sb.AppendLine($"{(useWaypoints ? "" : "\t\t")}\t\t<ele>{i}</ele>");
-                if (useWaypoints)
+                foreach ((int i, RoutePoint point) in points.Index())
+                {
+                    (double lon, double lat) = point.Point.ToLonLat();
+                    sb.AppendLine($"\t<wpt lat=\"{lat}\" lon=\"{lon}\">");
+                    sb.AppendLine($"\t\t<ele>{i}</ele>");
                     sb.AppendLine($"\t\t<name>{name}-{i}</name>");
-                sb.AppendLine(useWaypoints ? "\t</wpt>" : "\t\t\t</trkpt>");
+                    sb.AppendLine($"\t\t<cmt>{point.Time.ToLongTimeString()}</cmt>");
+                    sb.AppendLine($"\t\t<desc>{point.Time.ToLongTimeString()}</desc>");
+                    sb.AppendLine("\t</wpt>");
+                }
             }
-            if (!useWaypoints)
+            else
             {
+                sb.AppendLine("\t<trk>");
+                sb.AppendLine($"\t\t<name>{name}</name>");
+                sb.AppendLine("\t\t<trkseg>");
+                foreach ((int i, RoutePoint point) in points.Index())
+                {
+                    (double lon, double lat) = point.Point.ToLonLat();
+                    sb.AppendLine($"\t\t\t<trkpt lat=\"{lat}\" lon=\"{lon}\">");
+                    sb.AppendLine($"\t\t\t\t<ele>{i}</ele>");
+                    sb.AppendLine($"\t\t\t\t<time>{point.Time.ToString("o", CultureInfo.InvariantCulture)}</time>");
+                    sb.AppendLine("\t\t\t</trkpt>");
+                }
+                sb.AppendLine("\t\t</trkseg>");
+                sb.AppendLine("\t</trk>");
+            }
+            sb.AppendLine("</gpx>");
+            return sb.ToString();
+        }
+
+        public string GetStopsGPX(string name, bool useWaypoints = true)
+        {
+            StringBuilder sb = new();
+            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+            sb.AppendLine("<gpx creator=\"https://gpx.studio\" version=\"1.1\" schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www.garmin.com/xmlschemas/GpxExtensionsv3.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v1 http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd http://www.garmin.com/xmlschemas/PowerExtension/v1 http://www.garmin.com/xmlschemas/PowerExtensionv1.xsd http://www.topografix.com/GPX/gpx_style/0/2 http://www.topografix.com/GPX/gpx_style/0/2/gpx_style.xsd\" xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www.garmin.com/xmlschemas/GpxExtensionsv3.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v1 http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd http://www.garmin.com/xmlschemas/PowerExtension/v1 http://www.garmin.com/xmlschemas/PowerExtensionv1.xsd http://www.topografix.com/GPX/gpx_style/0/2 http://www.topografix.com/GPX/gpx_style/0/2/gpx_style.xsd\" xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v1\" xmlns:gpxx=\"http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:gpxpx=\"http://www.garmin.com/xmlschemas/PowerExtension/v1\" xmlns:gpx_style=\"http://www.topografix.com/GPX/gpx_style/0/2\">");
+            sb.AppendLine("\t<metadata>");
+            sb.AppendLine($"\t\t<name>{name}</name>");
+            sb.AppendLine("\t\t<author>");
+            sb.AppendLine("\t\t\t<name>gpx.studio</name>");
+            sb.AppendLine("\t\t\t<link href=\"https://gpx.studio\"/>");
+            sb.AppendLine("\t\t</author>");
+            sb.AppendLine("\t</metadata>");
+            if (useWaypoints)
+            {
+                sb.AppendLine("\t<trk>");
+                sb.AppendLine($"\t\t<name>{name}</name>");
+                sb.AppendLine("\t</trk>");
+                foreach ((int i, Stop stop) in stops.Index())
+                {
+                    (double lon, double lat) = stop.Point.ToLonLat();
+                    sb.AppendLine($"\t<wpt lat=\"{lat}\" lon=\"{lon}\">");
+                    sb.AppendLine($"\t\t<ele>{i}</ele>");
+                    sb.AppendLine($"\t\t<name>{name}-{stop.Name}</name>");
+                    sb.AppendLine($"\t\t<cmt>{stop.DepartureTime.ToLongTimeString()}</cmt>");
+                    sb.AppendLine($"\t\t<desc>{stop.DepartureTime.ToLongTimeString()}</desc>");
+                    sb.AppendLine("\t</wpt>");
+                }
+            }
+            else
+            {
+                sb.AppendLine("\t<trk>");
+                sb.AppendLine($"\t\t<name>{name}</name>");
+                sb.AppendLine("\t\t<trkseg>");
+                foreach ((int i, Stop stop) in stops.Index())
+                {
+                    (double lon, double lat) = stop.Point.ToLonLat();
+                    sb.AppendLine($"\t\t\t<trkpt lat=\"{lat}\" lon=\"{lon}\">");
+                    sb.AppendLine($"\t\t\t\t<ele>{i}</ele>");
+                    sb.AppendLine($"\t\t\t\t<time>{stop.DepartureTime.ToString("o", CultureInfo.InvariantCulture)}</time>");
+                    sb.AppendLine("\t\t\t</trkpt>");
+                }
                 sb.AppendLine("\t\t</trkseg>");
                 sb.AppendLine("\t</trk>");
             }

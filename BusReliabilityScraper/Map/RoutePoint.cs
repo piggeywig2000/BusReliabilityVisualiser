@@ -16,6 +16,7 @@ namespace BusReliabilityScraper.Map
         public double Northing => Point.Northing;
         public double RouteDistance { get; set; } = 0;
         public double Bearing { get; set; } = bearing;
+        public DateTime Time { get; set; } = DateTime.UnixEpoch;
 
         public static RoutePoint FromWGS84(double longitude, double latitude)
         {
@@ -52,13 +53,6 @@ namespace BusReliabilityScraper.Map
             return FromWGS84((double)location.Longitude, (double)location.Latitude);
         }
 
-        public (double, double) ToLonLat()
-        {
-            Osgb36 easNor = new(Easting, Northing);
-            LatitudeLongitude latLong = GeoUK.OSTN.Transform.OsgbToEtrs89(easNor);
-            return (latLong.Longitude, latLong.Latitude);
-        }
-
         public void MatchToRoute(Route route)
         {
             double closestDistanceSqr = double.PositiveInfinity;
@@ -93,17 +87,7 @@ namespace BusReliabilityScraper.Map
 
         public void MovePositionFromRouteDistance(Route route)
         {
-            int iPointBefore = 0;
-            for (int i = 0; i < route.PointCount && RouteDistance > route.Points[i].RouteDistance; i++)
-            {
-                iPointBefore = i;
-            }
-            int iPointAfter = iPointBefore + 1;
-
-            Point =
-                iPointBefore == -1 ? route.Points[iPointAfter].Point : (
-                iPointAfter == route.PointCount ? route.Points[iPointBefore].Point :
-                route.Points[iPointBefore].Point.LerpToUnclamped(route.Points[iPointAfter].Point, (RouteDistance - route.Points[iPointBefore].RouteDistance) / (route.Points[iPointAfter].RouteDistance - route.Points[iPointBefore].RouteDistance)));
+            Point = route.GetPositionAtDistance(RouteDistance);
         }
 
         public override bool Equals(object? obj) => obj is RoutePoint rp && Equals(rp);
