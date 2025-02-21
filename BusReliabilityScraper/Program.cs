@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using BodsDotNet;
 using BodsDotNet.Schemas.TransXChange;
+using BusReliabilityScraper.Timetable;
 
 namespace BusReliabilityScraper
 {
@@ -11,7 +12,11 @@ namespace BusReliabilityScraper
             //await FetchVehiclesOnLine();
             //await LogPositions();
             //await PrintRouteGPX("FBRI-BH_iAkTyiv_oVBjns3.zip");
-            await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../..");
+            //await MatchRoute("u1sample3.csv", "FBRI-BH_iAkTyiv_oVBjns3.zip", "../../../../..");
+
+            BodsClient bodsClient = new("f3eb2d8601b48191874b770a833b29fc0238e1da");
+            TimetableFileManager timetableFileManager = new(bodsClient, "../../../../../Timetables", new TimeOnly(02, 00));
+            await timetableFileManager.UpdateTimetables();
         }
 
         static async Task MatchRoute(string csvPath, string transXChangePath, string outputPath)
@@ -23,7 +28,7 @@ namespace BusReliabilityScraper
             double BUFFER_DISTANCE = 50;
             BodsClient bodsClient = new(API_KEY);
 
-            IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromFile(transXChangePath);
+            IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromZipFile(transXChangePath);
             TransXChange line = txcs
                 .Where(txc => txc.Services.Service.Any(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)))
                 .OrderByDescending(txc => txc.Services.Service.First(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)).OperatingPeriod.StartDate)
@@ -169,7 +174,7 @@ namespace BusReliabilityScraper
             TimeSpan DEPARTURE = new TimeSpan(15, 33, 0);
             BodsClient bodsClient = new(API_KEY);
 
-            IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromFile(transXChangePath);
+            IReadOnlyCollection<TransXChange> txcs = await bodsClient.GetTransXChangeFromZipFile(transXChangePath);
             TransXChange line = txcs
                 .Where(txc => txc.Services.Service.Any(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)))
                 .OrderByDescending(txc => txc.Services.Service.First(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)).OperatingPeriod.StartDate)
@@ -251,8 +256,6 @@ namespace BusReliabilityScraper
                 .Where(txc => txc.Services.Service.Any(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)))
                 .OrderByDescending(txc => txc.Services.Service.First(s => s.Lines.Any(l => l.LineName.Value == BUS_LINE)).OperatingPeriod.StartDate)
                 .First();
-
-            Console.WriteLine($"Found line {BUS_LINE}");
 
             string[] blocks = line.VehicleJourneys.VehicleJourneySpecified ? line.VehicleJourneys.VehicleJourney
                 .Select(vj => vj.Operational.Block.BlockNumber).Distinct().ToArray() : [];

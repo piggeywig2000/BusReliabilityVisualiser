@@ -41,22 +41,39 @@ namespace BodsDotNet
             }
         }
 
+        public async Task DownloadTransXChangeFromUrl(string url, string downloadPath, bool overwrite = true)
+        {
+            using HttpResponseMessage httpResponse = await httpClient.GetAsync(url);
+            httpResponse.EnsureSuccessStatusCode();
+            using Stream contentStream = await httpResponse.Content.ReadAsStreamAsync();
+
+            using ZipArchive zipArchive = new(contentStream, ZipArchiveMode.Read);
+            zipArchive.ExtractToDirectory(downloadPath, overwrite);
+        }
+
         public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromUrl(string url)
         {
             using HttpResponseMessage httpResponse = await httpClient.GetAsync(url);
             httpResponse.EnsureSuccessStatusCode();
 
             using Stream contentStream = await httpResponse.Content.ReadAsStreamAsync();
-            return await GetTransXChangeFromStream(contentStream);
+            return await GetTransXChangeFromZipStream(contentStream);
         }
 
-        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromFile(string filePath)
+        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromZipFile(string filePath)
         {
             using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read);
-            return await GetTransXChangeFromStream(fs);
+            return await GetTransXChangeFromZipStream(fs);
         }
 
-        private async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromStream(Stream stream)
+        public async Task<Schemas.TransXChange.TransXChange> GetTransXChangeFromXmlFile(string filePath)
+        {
+            using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read);
+            return await GetTransXChangeFromXmlStream(fs)
+                ?? throw new XmlException($"Failed to parse the TransXChange file at {Path.GetFileName(filePath)}");
+        }
+
+        private async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromZipStream(Stream stream)
         {
             using ZipArchive zipArchive = new(stream, ZipArchiveMode.Read);
             List<Schemas.TransXChange.TransXChange> txcs = [];
@@ -64,16 +81,21 @@ namespace BodsDotNet
             foreach (ZipArchiveEntry entry in zipArchive.Entries.OrderBy(e => e.FullName))
             {
                 using Stream entryStream = entry.Open();
-                using MemoryStream memoryStream = new();
-                using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
-                await entryStream.CopyToAsync(memoryStream);
-                memoryStream.Seek(0, SeekOrigin.Begin);
-                Schemas.TransXChange.TransXChange txc = (Schemas.TransXChange.TransXChange?)transXChangeSerializer.Deserialize(entryReader)
-                    ?? throw new XmlException($"Failed to parse the TransXChange file at {entry.FullName}");
+                Schemas.TransXChange.TransXChange txc = await GetTransXChangeFromXmlStream(entryStream)
+                    ?? throw new XmlException($"Failed to parse the TransXChange file at {entry.Name}");
                 txcs.Add(txc);
             }
 
             return txcs;
+        }
+
+        private async Task<Schemas.TransXChange.TransXChange?> GetTransXChangeFromXmlStream(Stream stream)
+        {
+            using MemoryStream memoryStream = new();
+            using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
+            await stream.CopyToAsync(memoryStream);
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            return (Schemas.TransXChange.TransXChange?)transXChangeSerializer.Deserialize(entryReader);
         }
 
         public async Task<Schemas.Siri.Siri> GetLocation(IEnumerable<string> operatorNocs, string line, ICollection<string> blockIds)
@@ -106,6 +128,7 @@ namespace BodsDotNet
             return siri;
         }
 
+        [Obsolete]
         public async Task<Schemas.Siri.Siri> GetLocation(double minLongitude, double minLatitude, double maxLongitude, double maxLatitude, IEnumerable<string> operatorNocs, string line)
         {
             using HttpResponseMessage httpResponse = await httpClient.GetAsync($"https://data.bus-data.dft.gov.uk/api/v1/datafeed?boundingBox={minLongitude},{minLatitude},{maxLongitude},{maxLatitude}&operatorRef={string.Join(',', operatorNocs)}&lineRef={line}&api_key={apiKey}");
