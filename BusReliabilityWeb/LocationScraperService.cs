@@ -50,7 +50,7 @@ namespace BusReliabilityWeb
                     vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = va.RecordedAtTime;
 
                     // It could still be in database but not in cache - double check from database
-                    TracePoint? latestTp = await dbController.GetLatestTracePoint(va.MonitoredVehicleJourney.VehicleRef.Value);
+                    TracePoint? latestTp = await dbController.GetLatestTracePoint(va.MonitoredVehicleJourney.VehicleRef.Value, stoppingToken);
                     if (latestTp != null && latestTp.RecordedAt >= va.RecordedAtTime)
                     {
                         vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = latestTp.RecordedAt;
@@ -76,7 +76,7 @@ namespace BusReliabilityWeb
                         va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
                 }
 
-                await dbController.AddTracePoints(tpsToAdd);
+                await dbController.AddTracePoints(tpsToAdd, stoppingToken);
             }
         }
     }

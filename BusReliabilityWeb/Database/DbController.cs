@@ -13,10 +13,10 @@ namespace BusReliabilityWeb.Database
             this.db = db;
         }
 
-        public async Task<TracePoint?> GetLatestTracePoint(string vehicleRef)
+        public async Task<TracePoint?> GetLatestTracePoint(string vehicleRef, CancellationToken cancellationToken)
         {
             if (db.State == System.Data.ConnectionState.Closed)
-                await db.OpenAsync();
+                await db.OpenAsync(cancellationToken);
             await using MySqlCommand command = db.CreateCommand();
             command.CommandText = @"
                 SELECT `trace_points`.`id`,
@@ -34,8 +34,8 @@ namespace BusReliabilityWeb.Database
                 ORDER BY `trace_points`.`recorded_at` DESC
                 LIMIT 1;";
             command.Parameters.AddWithValue("vehicle_ref", vehicleRef);
-            await using MySqlDataReader reader = await command.ExecuteReaderAsync();
-            TracePoint? tp = await reader.ReadAsync() ? new(
+            await using MySqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            TracePoint? tp = await reader.ReadAsync(cancellationToken) ? new(
                 reader.GetDateTime("recorded_at"),
                 reader.GetString("vehicle_ref"),
                 reader.GetString("service_code"),
@@ -48,11 +48,11 @@ namespace BusReliabilityWeb.Database
             return tp;
         }
 
-        public async Task AddTracePoint(TracePoint tracePoint)
+        public async Task AddTracePoint(TracePoint tracePoint, CancellationToken cancellationToken)
         {
             if (db.State == System.Data.ConnectionState.Closed)
-                await db.OpenAsync();
-            await using MySqlTransaction transaction = await db.BeginTransactionAsync();
+                await db.OpenAsync(cancellationToken);
+            await using MySqlTransaction transaction = await db.BeginTransactionAsync(cancellationToken);
             await using MySqlCommand command = db.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = @"
@@ -85,20 +85,20 @@ namespace BusReliabilityWeb.Database
             command.Parameters.AddWithValue("easting", tracePoint.Easting);
             command.Parameters.AddWithValue("northing", tracePoint.Northing);
             command.Parameters.AddWithValue("bearing", (object?)tracePoint.Bearing ?? DBNull.Value);
-            int rowsAffected = await command.ExecuteNonQueryAsync();
+            int rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             if (rowsAffected != 1)
             {
-                await transaction.RollbackAsync();
+                await transaction.RollbackAsync(cancellationToken);
                 throw new Exception($"Failed to insert trace point. Rows affected was {rowsAffected}.");
             }
-            await transaction.CommitAsync();
+            await transaction.CommitAsync(cancellationToken);
         }
 
-        public async Task AddTracePoints(IReadOnlyCollection<TracePoint> tracePoints)
+        public async Task AddTracePoints(IReadOnlyCollection<TracePoint> tracePoints, CancellationToken cancellationToken)
         {
             if (db.State == System.Data.ConnectionState.Closed)
-                await db.OpenAsync();
-            await using MySqlTransaction transaction = await db.BeginTransactionAsync();
+                await db.OpenAsync(cancellationToken);
+            await using MySqlTransaction transaction = await db.BeginTransactionAsync(cancellationToken);
             await using MySqlCommand command = db.CreateCommand();
             command.Transaction = transaction;
             StringBuilder sb = new();
@@ -144,13 +144,13 @@ namespace BusReliabilityWeb.Database
                 command.Parameters.AddWithValue($"northing_{i}", tracePoint.Northing);
                 command.Parameters.AddWithValue($"bearing_{i}", (object?)tracePoint.Bearing ?? DBNull.Value);
             }
-            int rowsAffected = await command.ExecuteNonQueryAsync();
+            int rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             if (rowsAffected != tracePoints.Count)
             {
-                await transaction.RollbackAsync();
+                await transaction.RollbackAsync(cancellationToken);
                 throw new Exception($"Failed to insert trace points. Rows affected was {rowsAffected}, should've been {tracePoints.Count}.");
             }
-            await transaction.CommitAsync();
+            await transaction.CommitAsync(cancellationToken);
         }
     }
 }
