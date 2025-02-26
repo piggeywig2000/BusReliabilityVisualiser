@@ -1,3 +1,8 @@
+using BodsDotNet;
+using BusReliabilityWeb.Database;
+using BusReliabilityWeb.Timetable;
+using MySqlConnector;
+
 namespace BusReliabilityWeb
 {
     public class Program
@@ -6,7 +11,16 @@ namespace BusReliabilityWeb
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // Add secret config file
+            builder.Configuration.AddJsonFile("appsettings.Private.json");
+
             // Add services to the container.
+            builder.Services.AddSingleton<BodsClient>(_ => new(builder.Configuration["BodsApiKey"] ?? throw new InvalidOperationException("No BODS API key provided")));
+            builder.Services.AddScoped<MySqlConnection>(_ => new(builder.Configuration.GetConnectionString("bus_visualiser")));
+            builder.Services.AddScoped<DbController>();
+            builder.Services.AddSingleton<TimetableFileManager>();
+            builder.Services.AddHostedService<TimetableUpdateService>();
+            builder.Services.AddHostedService<LocationScraperService>();
             builder.Services.AddRazorPages();
 
             var app = builder.Build();

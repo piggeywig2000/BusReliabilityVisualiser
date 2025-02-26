@@ -24,7 +24,7 @@ namespace BodsDotNet
             }
         };
 
-        public async Task<Schemas.Timetable.Timetable> GetTimetableById(int id)
+        public async Task<Schemas.Timetable.Timetable> GetTimetableById(int id, CancellationToken cancellationToken = default)
         {
             using HttpResponseMessage httpResponse = await httpClient.GetAsync($"https://data.bus-data.dft.gov.uk/api/v1/dataset/{id}?api_key={apiKey}");
             using Stream stream = await httpResponse.Content.ReadAsStreamAsync();
@@ -41,7 +41,7 @@ namespace BodsDotNet
             }
         }
 
-        public async Task DownloadTransXChangeFromUrl(string url, string downloadPath, bool overwrite = true)
+        public async Task DownloadTransXChangeFromUrl(string url, string downloadPath, bool overwrite = true, CancellationToken cancellationToken = default)
         {
             using HttpResponseMessage httpResponse = await httpClient.GetAsync(url);
             httpResponse.EnsureSuccessStatusCode();
@@ -51,29 +51,29 @@ namespace BodsDotNet
             zipArchive.ExtractToDirectory(downloadPath, overwrite);
         }
 
-        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromUrl(string url)
+        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromUrl(string url, CancellationToken cancellationToken = default)
         {
-            using HttpResponseMessage httpResponse = await httpClient.GetAsync(url);
+            using HttpResponseMessage httpResponse = await httpClient.GetAsync(url, cancellationToken);
             httpResponse.EnsureSuccessStatusCode();
 
             using Stream contentStream = await httpResponse.Content.ReadAsStreamAsync();
-            return await GetTransXChangeFromZipStream(contentStream);
+            return await GetTransXChangeFromZipStream(contentStream, cancellationToken);
         }
 
-        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromZipFile(string filePath)
+        public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromZipFile(string filePath, CancellationToken cancellationToken = default)
         {
             using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read);
-            return await GetTransXChangeFromZipStream(fs);
+            return await GetTransXChangeFromZipStream(fs, cancellationToken);
         }
 
-        public async Task<Schemas.TransXChange.TransXChange> GetTransXChangeFromXmlFile(string filePath)
+        public async Task<Schemas.TransXChange.TransXChange> GetTransXChangeFromXmlFile(string filePath, CancellationToken cancellationToken = default)
         {
             using FileStream fs = new(filePath, FileMode.Open, FileAccess.Read);
-            return await GetTransXChangeFromXmlStream(fs)
+            return await GetTransXChangeFromXmlStream(fs, cancellationToken)
                 ?? throw new XmlException($"Failed to parse the TransXChange file at {Path.GetFileName(filePath)}");
         }
 
-        private async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromZipStream(Stream stream)
+        private async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromZipStream(Stream stream, CancellationToken cancellationToken)
         {
             using ZipArchive zipArchive = new(stream, ZipArchiveMode.Read);
             List<Schemas.TransXChange.TransXChange> txcs = [];
@@ -81,7 +81,7 @@ namespace BodsDotNet
             foreach (ZipArchiveEntry entry in zipArchive.Entries.OrderBy(e => e.FullName))
             {
                 using Stream entryStream = entry.Open();
-                Schemas.TransXChange.TransXChange txc = await GetTransXChangeFromXmlStream(entryStream)
+                Schemas.TransXChange.TransXChange txc = await GetTransXChangeFromXmlStream(entryStream, cancellationToken)
                     ?? throw new XmlException($"Failed to parse the TransXChange file at {entry.Name}");
                 txcs.Add(txc);
             }
@@ -89,26 +89,26 @@ namespace BodsDotNet
             return txcs;
         }
 
-        private async Task<Schemas.TransXChange.TransXChange?> GetTransXChangeFromXmlStream(Stream stream)
+        private async Task<Schemas.TransXChange.TransXChange?> GetTransXChangeFromXmlStream(Stream stream, CancellationToken cancellationToken)
         {
             using MemoryStream memoryStream = new();
             using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
-            await stream.CopyToAsync(memoryStream);
+            await stream.CopyToAsync(memoryStream, cancellationToken);
             memoryStream.Seek(0, SeekOrigin.Begin);
-            return (Schemas.TransXChange.TransXChange?)transXChangeSerializer.Deserialize(entryReader);
+            return (Schemas.TransXChange.TransXChange?)transXChangeSerializer.Deserialize(entryReader); // TODO: Run in worker thread
         }
 
-        public async Task<Schemas.Siri.Siri> GetLocation(IEnumerable<string> operatorNocs, string line, ICollection<string> blockIds)
+        public async Task<Schemas.Siri.Siri> GetLocation(IEnumerable<string> operatorNocs, string line, IReadOnlyCollection<string> blockIds, CancellationToken cancellationToken = default)
         {
-            using HttpResponseMessage httpResponse = await httpClient.GetAsync($"https://data.bus-data.dft.gov.uk/api/v1/datafeed?operatorRef={string.Join(',', operatorNocs)}&lineRef={line}&api_key={apiKey}");
+            using HttpResponseMessage httpResponse = await httpClient.GetAsync($"https://data.bus-data.dft.gov.uk/api/v1/datafeed?operatorRef={string.Join(',', operatorNocs)}&lineRef={line}&api_key={apiKey}", cancellationToken);
             httpResponse.EnsureSuccessStatusCode();
 
-            Stream contentStream = await httpResponse.Content.ReadAsStreamAsync();
+            Stream contentStream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
             using MemoryStream memoryStream = new();
             using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
-            await contentStream.CopyToAsync(memoryStream);
+            await contentStream.CopyToAsync(memoryStream, cancellationToken);
             memoryStream.Seek(0, SeekOrigin.Begin);
-            Schemas.Siri.Siri siri = (Schemas.Siri.Siri?)siriSerializer.Deserialize(entryReader)
+            Schemas.Siri.Siri siri = (Schemas.Siri.Siri?)siriSerializer.Deserialize(entryReader) // TODO: Run in worker thread
                 ?? throw new XmlException($"Failed to parse Siri format");
 
             if (siri.ServiceDelivery.VehicleMonitoringDeliverySpecified)
