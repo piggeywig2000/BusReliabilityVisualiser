@@ -115,7 +115,8 @@ namespace BusReliabilityWeb
                         line.ServiceCode,
                         line.LineId,
                         va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:TicketMachineServiceCode", nsManager)!.InnerText,
-                        va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText,
+                        //va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText, // This does not seem to be very accurate?
+                        va.MonitoredVehicleJourney.FramedVehicleJourneyRef.DatedVehicleJourneyRef,
                         point.Easting,
                         point.Northing,
                         va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
