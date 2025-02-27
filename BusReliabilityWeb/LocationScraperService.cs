@@ -15,68 +15,88 @@ namespace BusReliabilityWeb
         private readonly IServiceProvider serviceProvider;
         private readonly TimetableFileManager timetableFileManager;
         private readonly Dictionary<string, DateTime> vehicleToRecordedTime = [];
+        private readonly TimeSpan loopLength;
 
-        public LocationScraperService(ILogger<LocationScraperService> logger, BodsClient bodsClient, IServiceProvider serviceProvider, TimetableFileManager timetableFileManager)
+        public LocationScraperService(ILogger<LocationScraperService> logger, IConfiguration configuration, BodsClient bodsClient, IServiceProvider serviceProvider, TimetableFileManager timetableFileManager)
         {
             this.logger = logger;
             this.bodsClient = bodsClient;
             this.serviceProvider = serviceProvider;
             this.timetableFileManager = timetableFileManager;
+            loopLength = TimeSpan.FromSeconds(configuration.GetValue<int>("ScraperLoopSeconds"));
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             logger.LogInformation("Starting location scraper service");
 
-            await using AsyncServiceScope scope = serviceProvider.CreateAsyncScope();
-            DbController dbController = scope.ServiceProvider.GetRequiredService<DbController>();
-
-            foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(DateOnly.FromDateTime(Util.GmtNow)).SelectMany(s => s.Lines)) // TODO: Make this work with night buses following yesterday's timetable
+            while (!stoppingToken.IsCancellationRequested)
             {
-                List<TracePoint> tpsToAdd = [];
+                DateTime startTime = DateTime.UtcNow;
 
-                Siri loc = await bodsClient.GetLocation(line.Operators, line.LineName, line.BlockIds, stoppingToken);
-                if (!loc.ServiceDelivery.VehicleMonitoringDeliverySpecified)
-                    continue;
+                await using AsyncServiceScope scope = serviceProvider.CreateAsyncScope();
+                DbController dbController = scope.ServiceProvider.GetRequiredService<DbController>();
 
-                tpsToAdd.Clear();
-
-                foreach (VehicleActivityStructure va in loc.ServiceDelivery.VehicleMonitoringDelivery
-                    .Where(vmd => vmd.VehicleActivitySpecified)
-                    .SelectMany(vmd => vmd.VehicleActivity))
+                foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(DateOnly.FromDateTime(Util.GmtNow)).SelectMany(s => s.Lines)) // TODO: Make this work with night buses following yesterday's timetable
                 {
-                    if (vehicleToRecordedTime.ContainsKey(va.MonitoredVehicleJourney.VehicleRef.Value) && vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] >= va.RecordedAtTime)
-                        continue; // We've already got this data point
-                    vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = va.RecordedAtTime;
+                    List<TracePoint> tpsToAdd = [];
 
-                    // It could still be in database but not in cache - double check from database
-                    TracePoint? latestTp = await dbController.GetLatestTracePoint(va.MonitoredVehicleJourney.VehicleRef.Value, stoppingToken);
-                    if (latestTp != null && latestTp.RecordedAt >= va.RecordedAtTime)
+                    Siri loc = await bodsClient.GetLocation(line.Operators, line.LineName, line.BlockIds, stoppingToken);
+                    if (!loc.ServiceDelivery.VehicleMonitoringDeliverySpecified)
+                        continue;
+
+                    tpsToAdd.Clear();
+
+                    foreach (VehicleActivityStructure va in loc.ServiceDelivery.VehicleMonitoringDelivery
+                        .Where(vmd => vmd.VehicleActivitySpecified)
+                        .SelectMany(vmd => vmd.VehicleActivity))
                     {
-                        vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = latestTp.RecordedAt;
-                        continue; // We've already got this point in the database
+                        if (vehicleToRecordedTime.ContainsKey(va.MonitoredVehicleJourney.VehicleRef.Value) && vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] >= va.RecordedAtTime)
+                            continue; // We've already got this data point
+                        vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = va.RecordedAtTime;
+
+                        // It could still be in database but not in cache - double check from database
+                        TracePoint? latestTp = await dbController.GetLatestTracePoint(va.MonitoredVehicleJourney.VehicleRef.Value, stoppingToken);
+                        if (latestTp != null && latestTp.RecordedAt >= va.RecordedAtTime)
+                        {
+                            vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = latestTp.RecordedAt;
+                            continue; // We've already got this point in the database
+                        }
+
+                        // Convert location to BNG
+                        RoutePoint point = RoutePoint.FromSiri(va.MonitoredVehicleJourney.VehicleLocation);
+
+                        XmlNamespaceManager nsManager = new(va.Extensions.Any[0].OwnerDocument.NameTable);
+                        nsManager.AddNamespace("siri", "http://www.siri.org.uk/siri");
+
+                        // Add new point to database
+                        tpsToAdd.Add(new(
+                            va.RecordedAtTime,
+                            va.MonitoredVehicleJourney.VehicleRef.Value,
+                            line.ServiceCode,
+                            line.LineId,
+                            va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:TicketMachineServiceCode", nsManager)!.InnerText,
+                            va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText,
+                            point.Easting,
+                            point.Northing,
+                            va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
                     }
 
-                    // Convert location to BNG
-                    RoutePoint point = RoutePoint.FromSiri(va.MonitoredVehicleJourney.VehicleLocation);
-
-                    XmlNamespaceManager nsManager = new(va.Extensions.Any[0].OwnerDocument.NameTable);
-                    nsManager.AddNamespace("siri", "http://www.siri.org.uk/siri");
-
-                    // Add new point to database
-                    tpsToAdd.Add(new(
-                        va.RecordedAtTime,
-                        va.MonitoredVehicleJourney.VehicleRef.Value,
-                        line.ServiceCode,
-                        line.LineId,
-                        va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:TicketMachineServiceCode", nsManager)!.InnerText,
-                        va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText,
-                        point.Easting,
-                        point.Northing,
-                        va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
+                    if (tpsToAdd.Count > 0)
+                        await dbController.AddTracePoints(tpsToAdd, stoppingToken);
                 }
 
-                await dbController.AddTracePoints(tpsToAdd, stoppingToken);
+                // Wait until next cycle
+                TimeSpan elapsed = DateTime.UtcNow - startTime;
+                logger.LogDebug("Scraping took {elapsed:F0}ms out of {budget:F0}ms, waiting for {waitLength:F0}ms", elapsed.TotalMilliseconds, loopLength.TotalMilliseconds, (loopLength - elapsed).TotalMilliseconds);
+                if (elapsed < loopLength)
+                {
+                    await Task.Delay(loopLength - elapsed, stoppingToken);
+                }
+                else
+                {
+                    logger.LogWarning("Exceeded loop budget {budget:F0}ms by {exceeded:F0}ms", loopLength.TotalMilliseconds, (elapsed - loopLength).TotalMilliseconds);
+                }
             }
         }
     }
