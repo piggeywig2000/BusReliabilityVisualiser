@@ -24,8 +24,8 @@ namespace BusReliabilityWeb
             await timetableFileManager.UpdateTimetables(cancellationToken);
 
             timer = new(async (state) => await timetableFileManager.UpdateTimetables(cancellationToken), null,
-                TimeSpan.FromDays(1) + timeOfDayUpdate.ToTimeSpan() - DateTime.UtcNow.TimeOfDay,
-                TimeSpan.FromDays(1));
+                TimeSpan.FromDays(1) + timeOfDayUpdate.ToTimeSpan() - DateTime.UtcNow.TimeOfDay, // Initial timeout is until the time of day update time
+                TimeSpan.FromDays(1)); // Run once per day
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
