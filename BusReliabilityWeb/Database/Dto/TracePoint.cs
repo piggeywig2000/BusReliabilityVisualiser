@@ -7,6 +7,7 @@
         string LineId,
         string TicketMachineServiceCode,
         string TicketMachineJourneyCode,
+        string Direction,
         double Easting,
         double Northing,
         double? Bearing)

@@ -6,6 +6,7 @@ CREATE TABLE `bus_visualiser`.`trace_points` (
   `line_id` VARCHAR(40) NOT NULL,
   `ticket_machine_service_code` VARCHAR(20) NOT NULL,
   `ticket_machine_journey_code` VARCHAR(20) NOT NULL,
+  `direction` VARCHAR(20) NOT NULL,
   `easting` DOUBLE NOT NULL,
   `northing` DOUBLE NOT NULL,
   `bearing` DOUBLE NULL,

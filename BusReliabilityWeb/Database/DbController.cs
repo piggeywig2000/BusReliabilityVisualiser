@@ -26,6 +26,7 @@ namespace BusReliabilityWeb.Database
                     `trace_points`.`line_id`,
                     `trace_points`.`ticket_machine_service_code`,
                     `trace_points`.`ticket_machine_journey_code`,
+                    `trace_points`.`direction`,
                     `trace_points`.`easting`,
                     `trace_points`.`northing`,
                     `trace_points`.`bearing`
@@ -42,6 +43,7 @@ namespace BusReliabilityWeb.Database
                 reader.GetString("line_id"),
                 reader.GetString("ticket_machine_service_code"),
                 reader.GetString("ticket_machine_journey_code"),
+                reader.GetString("direction"),
                 reader.GetDouble("easting"),
                 reader.GetDouble("northing"),
                 reader.IsDBNull(reader.GetOrdinal("bearing")) ? null : reader.GetDouble("bearing")) : null;
@@ -63,6 +65,7 @@ namespace BusReliabilityWeb.Database
                     `line_id`,
                     `ticket_machine_service_code`,
                     `ticket_machine_journey_code`,
+                    `direction`,
                     `easting`,
                     `northing`,
                     `bearing`)
@@ -73,6 +76,7 @@ namespace BusReliabilityWeb.Database
                      @line_id,
                      @ticket_machine_service_code,
                      @ticket_machine_journey_code,
+                     @direction,
                      @easting,
                      @northing,
                      @bearing);";
@@ -82,6 +86,7 @@ namespace BusReliabilityWeb.Database
             command.Parameters.AddWithValue("line_id", tracePoint.LineId);
             command.Parameters.AddWithValue("ticket_machine_service_code", tracePoint.TicketMachineServiceCode);
             command.Parameters.AddWithValue("ticket_machine_journey_code", tracePoint.TicketMachineJourneyCode);
+            command.Parameters.AddWithValue("direction", tracePoint.Direction);
             command.Parameters.AddWithValue("easting", tracePoint.Easting);
             command.Parameters.AddWithValue("northing", tracePoint.Northing);
             command.Parameters.AddWithValue("bearing", (object?)tracePoint.Bearing ?? DBNull.Value);
@@ -110,6 +115,7 @@ namespace BusReliabilityWeb.Database
                     `line_id`,
                     `ticket_machine_service_code`,
                     `ticket_machine_journey_code`,
+                    `direction`,
                     `easting`,
                     `northing`,
                     `bearing`)
@@ -126,6 +132,7 @@ namespace BusReliabilityWeb.Database
                      @line_id_{i},
                      @ticket_machine_service_code_{i},
                      @ticket_machine_journey_code_{i},
+                     @direction_{i},
                      @easting_{i},
                      @northing_{i},
                      @bearing_{i})");
@@ -140,6 +147,7 @@ namespace BusReliabilityWeb.Database
                 command.Parameters.AddWithValue($"line_id_{i}", tracePoint.LineId);
                 command.Parameters.AddWithValue($"ticket_machine_service_code_{i}", tracePoint.TicketMachineServiceCode);
                 command.Parameters.AddWithValue($"ticket_machine_journey_code_{i}", tracePoint.TicketMachineJourneyCode);
+                command.Parameters.AddWithValue($"direction_{i}", tracePoint.Direction);
                 command.Parameters.AddWithValue($"easting_{i}", tracePoint.Easting);
                 command.Parameters.AddWithValue($"northing_{i}", tracePoint.Northing);
                 command.Parameters.AddWithValue($"bearing_{i}", (object?)tracePoint.Bearing ?? DBNull.Value);

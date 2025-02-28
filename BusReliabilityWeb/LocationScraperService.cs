@@ -129,6 +129,7 @@ namespace BusReliabilityWeb
                     ticketMachineServiceCode,
                     //va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText, // This does not seem to be very accurate?
                     va.MonitoredVehicleJourney.FramedVehicleJourneyRef.DatedVehicleJourneyRef,
+                    va.MonitoredVehicleJourney.DirectionRef.Value,
                     point.Easting,
                     point.Northing,
                     va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
