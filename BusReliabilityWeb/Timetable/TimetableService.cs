@@ -5,6 +5,7 @@ namespace BusReliabilityWeb.Timetable
     public class TimetableService
     {
         private readonly Dictionary<string, TimetableLine> lines;
+        private readonly Dictionary<string, TimetableLine> lineNameToLine;
 
         public TimetableService(string xmlPath, string serviceCode, TransXChange txc)
         {
@@ -17,6 +18,7 @@ namespace BusReliabilityWeb.Timetable
             lines = service.Lines
                 .Select(l => new TimetableLine(txc, ServiceCode, l.Id))
                 .ToDictionary(l => l.LineId);
+            lineNameToLine = lines.Values.ToDictionary(l => l.LineName);
         }
 
         public string XmlPath { get; }
@@ -28,5 +30,11 @@ namespace BusReliabilityWeb.Timetable
         public bool IsValidAtDate(DateOnly date) => date >= StartDate && (!EndDate.HasValue || date <= EndDate);
 
         public TimetableLine GetLine(string lineId) => lines[lineId];
+
+        public TimetableLine? TryGetLineFromName(string lineName)
+        {
+            lineNameToLine.TryGetValue(lineName, out TimetableLine? line);
+            return line;
+        }
     }
 }

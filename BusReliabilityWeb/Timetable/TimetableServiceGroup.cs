@@ -10,7 +10,9 @@ namespace BusReliabilityWeb.Timetable
     {
         private readonly List<TimetableService> timetables = [];
 
+        public IReadOnlyCollection<TimetableService> Timetables => timetables;
         public string ServiceCode { get; } = serviceCode;
+        public IEnumerable<string> OperatorNOCs => timetables.SelectMany(t => t.Lines.SelectMany(l => l.OperatorNOCs)).Distinct();
 
         public bool Contains(TimetableService period) => timetables.Exists(tp => tp.XmlPath == period.XmlPath && tp.ServiceCode == period.ServiceCode);
 
@@ -19,14 +21,13 @@ namespace BusReliabilityWeb.Timetable
             if (Contains(period))
                 throw new InvalidOperationException("Timetable already exists");
             timetables.Add(period);
-            //timetables.Sort((a, b) => a.StartDate.CompareTo(b.StartDate));
+            timetables.Sort((a, b) => b.StartDate.CompareTo(a.StartDate)); // Sort descending
         }
 
-        public bool Contains(DateOnly date) => timetables.Any(tp => tp.IsValidAtDate(date));
+        public bool HasDate(DateOnly date) => timetables.Any(tp => tp.IsValidAtDate(date));
 
         public TimetableService GetTimetable(DateOnly date) => timetables
             .Where(tp => tp.IsValidAtDate(date))
-            .OrderByDescending(tp => tp.StartDate)
             .FirstOrDefault() ?? throw new InvalidOperationException("No timetable for the date specified");
     }
 }

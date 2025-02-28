@@ -128,6 +128,22 @@ namespace BodsDotNet
             return siri;
         }
 
+        public async Task<Schemas.Siri.Siri> GetLocation(IEnumerable<string> operatorNocs, CancellationToken cancellationToken = default)
+        {
+            using HttpResponseMessage httpResponse = await httpClient.GetAsync($"https://data.bus-data.dft.gov.uk/api/v1/datafeed?operatorRef={string.Join(',', operatorNocs)}&api_key={apiKey}", cancellationToken);
+            httpResponse.EnsureSuccessStatusCode();
+
+            await using Stream contentStream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
+            await using MemoryStream memoryStream = new();
+            using StreamReader entryReader = new(memoryStream, System.Text.Encoding.UTF8, true);
+            await contentStream.CopyToAsync(memoryStream, cancellationToken);
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            Schemas.Siri.Siri siri = (Schemas.Siri.Siri?)siriSerializer.Deserialize(entryReader) // TODO: Run in worker thread
+                ?? throw new XmlException($"Failed to parse Siri format");
+
+            return siri;
+        }
+
         [Obsolete]
         public async Task<Schemas.Siri.Siri> GetLocation(double minLongitude, double minLatitude, double maxLongitude, double maxLatitude, IEnumerable<string> operatorNocs, string line)
         {

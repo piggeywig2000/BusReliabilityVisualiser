@@ -9,6 +9,8 @@ namespace BusReliabilityWeb.Timetable
         private readonly string fileDirectory;
 
         private Dictionary<string, TimetableServiceGroup> services = [];
+        private string[] operatorNocs = [];
+        private Dictionary<(string, string), TimetableServiceGroup> nocTmscToService = [];
 
         public TimetableFileManager(ILogger<TimetableFileManager> logger, IConfiguration configuration, BodsClient bodsClient)
         {
@@ -19,12 +21,17 @@ namespace BusReliabilityWeb.Timetable
                 Directory.CreateDirectory(fileDirectory);
         }
 
-        public TimetableService[] GetAllTimetablesAtDate(DateOnly date) => services.Values
-            .Where(tsg => tsg.Contains(date))
-            .Select(tsg => tsg.GetTimetable(date))
-            .ToArray();
+        public IReadOnlyCollection<string> OperatorNocs => operatorNocs;
+
+        public IEnumerable<TimetableService> GetAllTimetablesAtDate(DateOnly date) => services.Values
+            .Where(tsg => tsg.HasDate(date))
+            .Select(tsg => tsg.GetTimetable(date));
 
         public TimetableService GetTimetable(string serviceCode, DateOnly date) => services[serviceCode].GetTimetable(date);
+
+        public TimetableService? TryGetTimetableFromNocTmsc(string noc, string ticketMachineServiceCode, DateOnly date) =>
+            nocTmscToService.TryGetValue((noc, ticketMachineServiceCode), out TimetableServiceGroup? tsg) ?
+                tsg.HasDate(date) ? nocTmscToService[(noc, ticketMachineServiceCode)].GetTimetable(date) : null : null;
 
         public async Task UpdateTimetables(CancellationToken cancellationToken)
         {
@@ -44,16 +51,64 @@ namespace BusReliabilityWeb.Timetable
                 foreach (BodsDotNet.Schemas.TransXChange.Service txcService in txc.Services.Service)
                 {
                     logger.LogDebug("Process {fileName}: {serviceIndex}", Path.GetFileName(xmlPath), txcService.ServiceCode);
+                    TimetableService periodToAdd;
+                    try
+                    {
+                        periodToAdd = new(xmlPath, txcService.ServiceCode, txc);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogWarning(e, "Failed to parse {xmlPath}", xmlPath);
+                        continue; // Just don't bother dealing with it. Don't collect data on this service
+                    }
                     if (!newServices.TryGetValue(txcService.ServiceCode, out TimetableServiceGroup? tGroup))
                     {
                         tGroup = new TimetableServiceGroup(txcService.ServiceCode);
                         newServices.Add(txcService.ServiceCode, tGroup);
                     }
-                    TimetableService periodToAdd = new(xmlPath, txcService.ServiceCode, txc);
                     tGroup.AddTimetable(periodToAdd);
                 }
             }
+
+            // If multiple services have same NOC and TMSC, we can't differentiate them. Just drop the services and don't collect data
+            List<TimetableServiceGroup> servicesToRemove = [];
+            Dictionary<(string, string), TimetableServiceGroup> newNocTmscToService = [];
+            foreach ((string noc, string tmsc, TimetableServiceGroup tsg) in newServices.Values
+                .SelectMany(tsg => tsg.Timetables
+                    .SelectMany(s => s.Lines
+                        .SelectMany(l => l.OperatorNOCs
+                            .SelectMany(noc => l.TicketMachineServiceCodes
+                                .Select(tmsc => (noc, tmsc, tsg))))))
+                .Distinct())
+            {
+                // If we have a key clash, multiple TxC files are for the same service. We're not going to deal with this
+                if (newNocTmscToService.TryGetValue((noc, tmsc), out TimetableServiceGroup? clashedTsg))
+                {
+                    servicesToRemove.Add(clashedTsg);
+                    servicesToRemove.Add(tsg);
+                }
+                else
+                {
+                    newNocTmscToService[(noc, tmsc)] = tsg;
+                }
+            }
+            // Remove clashed services
+            foreach (TimetableServiceGroup service in servicesToRemove)
+                newServices.Remove(service.ServiceCode);
+            foreach ((string noc, string tmsc) in servicesToRemove.SelectMany(tsg => tsg.Timetables
+                    .SelectMany(s => s.Lines
+                        .SelectMany(l => l.OperatorNOCs
+                            .SelectMany(noc => l.TicketMachineServiceCodes
+                                .Select(tmsc => (noc, tmsc))))))
+                .Distinct())
+                newNocTmscToService.Remove((noc, tmsc));
+
             services = newServices;
+            operatorNocs = newServices.Values
+                .SelectMany(tsg => tsg.OperatorNOCs)
+                .Distinct()
+                .ToArray();
+            nocTmscToService = newNocTmscToService!;
 
             logger.LogInformation("Updated timetables");
         }

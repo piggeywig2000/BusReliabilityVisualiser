@@ -74,57 +74,68 @@ namespace BusReliabilityWeb
             await using AsyncServiceScope scope = serviceProvider.CreateAsyncScope();
             DbController dbController = scope.ServiceProvider.GetRequiredService<DbController>();
 
-            // TODO: Parallelise this, when we have lots of lines this will not run very fast
-            foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(timetableDate).SelectMany(s => s.Lines))
+            List<TracePoint> tpsToAdd = [];
+
+            Siri loc = await bodsClient.GetLocation(timetableFileManager.OperatorNocs, cancellationToken);
+            if (!loc.ServiceDelivery.VehicleMonitoringDeliverySpecified)
+                return;
+
+            foreach (VehicleActivityStructure va in loc.ServiceDelivery.VehicleMonitoringDelivery
+                .Where(vmd => vmd.VehicleActivitySpecified)
+                .SelectMany(vmd => vmd.VehicleActivity)
+                .Where(va => TimeOnly.FromDateTime(va.RecordedAtTime) < new TimeOnly(04, 00) || TimeOnly.FromDateTime(va.RecordedAtTime) >= new TimeOnly(05, 00)))
             {
-                List<TracePoint> tpsToAdd = [];
+                XmlNamespaceManager nsManager = new(va.Extensions.Any[0].OwnerDocument.NameTable);
+                nsManager.AddNamespace("siri", "http://www.siri.org.uk/siri");
 
-                Siri loc = await bodsClient.GetLocation(line.Operators, line.LineName, line.BlockIds, cancellationToken);
-                if (!loc.ServiceDelivery.VehicleMonitoringDeliverySpecified)
-                    continue;
+                // Get the service and line that we're on
+                string ticketMachineServiceCode = va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:TicketMachineServiceCode", nsManager)!.InnerText;
+                TimetableService? service = timetableFileManager.TryGetTimetableFromNocTmsc(va.MonitoredVehicleJourney.OperatorRef.Value, ticketMachineServiceCode, timetableDate);
+                if (service == null)
+                    continue; // Service not found, just ignore it
+                TimetableLine? line = service.TryGetLineFromName(va.MonitoredVehicleJourney.LineRef.Value);
+                if (line == null)
+                    continue; // Line not found, just ignore it
 
-                tpsToAdd.Clear();
-
-                foreach (VehicleActivityStructure va in loc.ServiceDelivery.VehicleMonitoringDelivery
-                    .Where(vmd => vmd.VehicleActivitySpecified)
-                    .SelectMany(vmd => vmd.VehicleActivity)
-                    .Where(va => TimeOnly.FromDateTime(va.RecordedAtTime) < new TimeOnly(04, 00) || TimeOnly.FromDateTime(va.RecordedAtTime) >= new TimeOnly(05, 00)))
+                // Check if we already have this one
+                if (vehicleToRecordedTime.TryGetValue(va.MonitoredVehicleJourney.VehicleRef.Value, out DateTime existingRecordedAtTime))
                 {
-                    if (vehicleToRecordedTime.TryGetValue(va.MonitoredVehicleJourney.VehicleRef.Value, out DateTime recordedAtTime) && recordedAtTime >= va.RecordedAtTime)
+                    // Cache hit
+                    if (existingRecordedAtTime >= va.RecordedAtTime)
                         continue; // We've already got this data point
-                    vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = va.RecordedAtTime;
-
-                    // It could still be in database but not in cache - double check from database
+                }
+                else
+                {
+                    // Cache miss. Double check from database
                     TracePoint? latestTp = await dbController.GetLatestTracePoint(va.MonitoredVehicleJourney.VehicleRef.Value, cancellationToken);
                     if (latestTp != null && latestTp.RecordedAt >= va.RecordedAtTime)
                     {
+                        // We've already got this point in the database - update cache and move along
                         vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = latestTp.RecordedAt;
-                        continue; // We've already got this point in the database
+                        continue;
                     }
-
-                    // Convert location to BNG
-                    RoutePoint point = RoutePoint.FromSiri(va.MonitoredVehicleJourney.VehicleLocation);
-
-                    XmlNamespaceManager nsManager = new(va.Extensions.Any[0].OwnerDocument.NameTable);
-                    nsManager.AddNamespace("siri", "http://www.siri.org.uk/siri");
-
-                    // Add new point to database
-                    tpsToAdd.Add(new(
-                        va.RecordedAtTime,
-                        va.MonitoredVehicleJourney.VehicleRef.Value,
-                        line.ServiceCode,
-                        line.LineId,
-                        va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:TicketMachineServiceCode", nsManager)!.InnerText,
-                        //va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText, // This does not seem to be very accurate?
-                        va.MonitoredVehicleJourney.FramedVehicleJourneyRef.DatedVehicleJourneyRef,
-                        point.Easting,
-                        point.Northing,
-                        va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
                 }
+                vehicleToRecordedTime[va.MonitoredVehicleJourney.VehicleRef.Value] = va.RecordedAtTime; // Update cache
 
-                if (tpsToAdd.Count > 0)
-                    await dbController.AddTracePoints(tpsToAdd, cancellationToken);
+                // Convert location to BNG
+                RoutePoint point = RoutePoint.FromSiri(va.MonitoredVehicleJourney.VehicleLocation);
+
+                // Add new point to database
+                tpsToAdd.Add(new(
+                    va.RecordedAtTime,
+                    va.MonitoredVehicleJourney.VehicleRef.Value,
+                    line.ServiceCode,
+                    line.LineId,
+                    ticketMachineServiceCode,
+                    //va.Extensions.Any[0].SelectSingleNode("/siri:Operational/siri:TicketMachine/siri:JourneyCode", nsManager)!.InnerText, // This does not seem to be very accurate?
+                    va.MonitoredVehicleJourney.FramedVehicleJourneyRef.DatedVehicleJourneyRef,
+                    point.Easting,
+                    point.Northing,
+                    va.MonitoredVehicleJourney.BearingSpecified ? va.MonitoredVehicleJourney.Bearing : null));
             }
+
+            if (tpsToAdd.Count > 0)
+                await dbController.AddTracePoints(tpsToAdd, cancellationToken);
         }
     }
 }
