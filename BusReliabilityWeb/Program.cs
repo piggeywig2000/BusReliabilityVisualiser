@@ -20,7 +20,8 @@ namespace BusReliabilityWeb
             builder.Services.AddScoped<DbController>();
             builder.Services.AddSingleton<TimetableFileManager>();
             builder.Services.AddHostedService<TimetableUpdateService>();
-            builder.Services.AddHostedService<LocationScraperService>();
+            if (builder.Configuration.GetValue("DoLocationScraping", true))
+                builder.Services.AddHostedService<LocationScraperService>();
             builder.Services.AddRazorPages();
 
             var app = builder.Build();
