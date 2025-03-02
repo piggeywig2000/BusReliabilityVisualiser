@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Threading;
 using BusReliabilityWeb.Database.Dto;
 using MySqlConnector;
 
@@ -19,8 +20,7 @@ namespace BusReliabilityWeb.Database
                 await db.OpenAsync(cancellationToken);
             await using MySqlCommand command = db.CreateCommand();
             command.CommandText = @"
-                SELECT `trace_points`.`id`,
-                    `trace_points`.`recorded_at`,
+                SELECT `trace_points`.`recorded_at`,
                     `trace_points`.`vehicle_ref`,
                     `trace_points`.`service_code`,
                     `trace_points`.`line_id`,
@@ -159,6 +159,81 @@ namespace BusReliabilityWeb.Database
                 throw new Exception($"Failed to insert trace points. Rows affected was {rowsAffected}, should've been {tracePoints.Count}.");
             }
             await transaction.CommitAsync(cancellationToken);
+        }
+
+        public async Task<(string tmjc, string direction)[]> GetJourneyCodesAndDirectionForLineInDay(string serviceCode, string lineId, DateOnly date, CancellationToken cancellationToken)
+        {
+            if (db.State == System.Data.ConnectionState.Closed)
+                await db.OpenAsync(cancellationToken);
+            await using MySqlCommand command = db.CreateCommand();
+            command.CommandText = @"
+                SELECT `trace_points`.`ticket_machine_journey_code`, `trace_points`.`direction`
+                FROM `bus_visualiser`.`trace_points`
+                WHERE `trace_points`.`service_code` = @service_code AND
+                    `trace_points`.`line_id` = @line_id AND
+                    `trace_points`.`recorded_at` >= @date_from AND
+                    `trace_points`.`recorded_at` <= @date_to
+                GROUP BY `trace_points`.`ticket_machine_journey_code`, `trace_points`.`direction`;";
+            TimeOnly changeoverTime = new(04, 30);
+            command.Parameters.AddWithValue("service_code", serviceCode);
+            command.Parameters.AddWithValue("line_id", lineId);
+            command.Parameters.AddWithValue("date_from", new DateTime(date, changeoverTime));
+            command.Parameters.AddWithValue("date_to", new DateTime(date.AddDays(1), changeoverTime));
+            await using MySqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            List<(string tmjc, string direction)> output = [];
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                output.Add((reader.GetString("ticket_machine_journey_code"), reader.GetString("direction")));
+            }
+            return [.. output];
+        }
+
+        public async Task<TracePoint[]> GetTracePointsForJourney(string serviceCode, string lineId, DateOnly date, string ticketMachineJourneyCode, string direction, CancellationToken cancellationToken)
+        {
+            if (db.State == System.Data.ConnectionState.Closed)
+                await db.OpenAsync(cancellationToken);
+            await using MySqlCommand command = db.CreateCommand();
+            command.CommandText = @"
+                SELECT `trace_points`.`recorded_at`,
+                    `trace_points`.`vehicle_ref`,
+                    `trace_points`.`service_code`,
+                    `trace_points`.`line_id`,
+                    `trace_points`.`ticket_machine_service_code`,
+                    `trace_points`.`ticket_machine_journey_code`,
+                    `trace_points`.`direction`,
+                    `trace_points`.`easting`,
+                    `trace_points`.`northing`,
+                    `trace_points`.`bearing`
+                FROM `bus_visualiser`.`trace_points`
+                WHERE `trace_points`.`service_code` = @service_code AND
+                    `trace_points`.`line_id` = @line_id AND
+                    `trace_points`.`recorded_at` >= @date_from AND
+                    `trace_points`.`recorded_at` <= @date_to AND
+                    `trace_points`.`ticket_machine_journey_code` = @ticket_machine_journey_code
+                ORDER BY `trace_points`.`recorded_at` ASC";
+            TimeOnly changeoverTime = new(04, 30);
+            command.Parameters.AddWithValue("service_code", serviceCode);
+            command.Parameters.AddWithValue("line_id", lineId);
+            command.Parameters.AddWithValue("date_from", new DateTime(date, changeoverTime));
+            command.Parameters.AddWithValue("date_to", new DateTime(date.AddDays(1), changeoverTime));
+            command.Parameters.AddWithValue("ticket_machine_journey_code", ticketMachineJourneyCode);
+            await using MySqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            List<TracePoint> tracePoints = [];
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                tracePoints.Add(new(
+                    reader.GetDateTime("recorded_at"),
+                    reader.GetString("vehicle_ref"),
+                    reader.GetString("service_code"),
+                    reader.GetString("line_id"),
+                    reader.GetString("ticket_machine_service_code"),
+                    reader.GetString("ticket_machine_journey_code"),
+                    reader.GetString("direction"),
+                    reader.GetDouble("easting"),
+                    reader.GetDouble("northing"),
+                    reader.IsDBNull(reader.GetOrdinal("bearing")) ? null : reader.GetDouble("bearing")));
+            }
+            return [.. tracePoints];
         }
     }
 }

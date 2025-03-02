@@ -22,6 +22,7 @@ namespace BusReliabilityWeb
             builder.Services.AddHostedService<TimetableUpdateService>();
             if (builder.Configuration.GetValue("DoLocationScraping", true))
                 builder.Services.AddHostedService<LocationScraperService>();
+            builder.Services.AddHostedService<DataProcessingService>();
             builder.Services.AddRazorPages();
 
             var app = builder.Build();

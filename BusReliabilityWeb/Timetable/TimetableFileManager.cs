@@ -48,9 +48,25 @@ namespace BusReliabilityWeb.Timetable
                 if (!Path.GetFileName(xmlPath).StartsWith("U1"))
                     continue;
                 BodsDotNet.Schemas.TransXChange.TransXChange txc = await bodsClient.GetTransXChangeFromXmlFile(xmlPath, cancellationToken);
+
+                // Ensure that this TXC is something we can handle
+                if (!txc.VehicleJourneys.VehicleJourneySpecified)
+                {
+                    logger.LogWarning("Cannot use {xmlPath} as it does not specify vehicle journeys", xmlPath);
+                    continue;
+                }
+
                 foreach (BodsDotNet.Schemas.TransXChange.Service txcService in txc.Services.Service)
                 {
                     logger.LogDebug("Process {fileName}: {serviceIndex}", Path.GetFileName(xmlPath), txcService.ServiceCode);
+
+                    // Ensure that this TXC service is something we can handle
+                    if (!txcService.StandardService.JourneyPatternSpecified)
+                    {
+                        logger.LogWarning("Cannot use {xmlPath}: {serviceIndex} as it does not specify journey patterns", xmlPath, txcService.ServiceCode);
+                        continue;
+                    }
+
                     TimetableService periodToAdd;
                     try
                     {

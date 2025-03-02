@@ -14,7 +14,9 @@ CREATE TABLE `bus_visualiser`.`trace_points` (
   UNIQUE INDEX `id_UNIQUE` (`id` ASC) INVISIBLE,
   INDEX `idx_recorded_at` (`recorded_at` ASC) VISIBLE,
   INDEX `idx_vehicle_ref` (`vehicle_ref` ASC) VISIBLE,
-  INDEX `idx_service_line` (`service_code` ASC, `line_id` ASC) VISIBLE);
+  INDEX `idx_service_line` (`service_code` ASC, `line_id` ASC) VISIBLE),
+  INDEX `idx_ticket_machine_journey_code` (`ticket_machine_journey_code` ASC) VISIBLE;
+  INDEX `idx_direction` (`direction` ASC) VISIBLE;
 
 CREATE USER 'busvisualiserwebapp'@'localhost' IDENTIFIED BY 'password';
 GRANT SELECT, INSERT ON `bus_visualiser`.`trace_points` TO 'busvisualiserwebapp'@'localhost';
