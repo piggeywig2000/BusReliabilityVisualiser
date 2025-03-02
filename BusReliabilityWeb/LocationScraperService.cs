@@ -63,9 +63,8 @@ namespace BusReliabilityWeb
 
         private async Task ScrapeOnce(CancellationToken cancellationToken)
         {
-            DateTime now = Util.GmtNow;
-            DateOnly timetableDate = DateOnly.FromDateTime(now);
-            TimeOnly timetableTime = TimeOnly.FromDateTime(now);
+            DateOnly timetableDate = Util.GmtNowDate;
+            TimeOnly timetableTime = Util.GmtNowTime;
             if (timetableTime >= new TimeOnly(04, 00) && timetableTime < new TimeOnly(05, 00))
                 return; // Don't bother if between 4am and 5am (timetable switches to next day, I can't be bothered to deal with this)
             else if (timetableTime <= new TimeOnly(04, 00))

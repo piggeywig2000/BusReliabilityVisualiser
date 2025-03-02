@@ -4,6 +4,8 @@
     {
         public static TimeZoneInfo GmtTimeZone => TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
 
+        public static DateOnly GmtNowDate => DateOnly.FromDateTime(GmtNow);
+        public static TimeOnly GmtNowTime => TimeOnly.FromDateTime(GmtNow);
         public static DateTime GmtNow => DateTime.UtcNow.ConvertUtcToGmt();
 
         public static DateTime ConvertUtcToGmt(this DateTime dt) => TimeZoneInfo.ConvertTimeFromUtc(dt, GmtTimeZone);
