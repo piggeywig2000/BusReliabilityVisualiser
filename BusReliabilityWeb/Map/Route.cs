@@ -29,15 +29,15 @@ namespace BusReliabilityWeb.Map
                 stops[0].Point = point.Point;
         }
 
-        public void AppendBusStop(string @ref, string name, DateTime departureTime)
+        public void AppendBusStop(string naptan, string name, DateTime departureTime)
         {
             RoutePoint? lastPoint = points.LastOrDefault();
-            stops.Add(new(@ref, name, lastPoint?.RouteDistance ?? 0, lastPoint?.Point ?? new(), departureTime));
+            stops.Add(new(naptan, name, lastPoint?.RouteDistance ?? 0, lastPoint?.Point ?? new(), departureTime));
         }
 
-        public void InsertBusStop(string @ref, string name, double routeDistance, Point point, DateTime departureTime)
+        public void InsertBusStop(string naptan, string name, double routeDistance, Point point, DateTime departureTime)
         {
-            stops.Add(new(@ref, name, routeDistance, point, departureTime));
+            stops.Add(new(naptan, name, routeDistance, point, departureTime));
             stops.Sort((s1, s2) => s1.RouteDistance.CompareTo(s2.RouteDistance));
         }
 
@@ -102,7 +102,7 @@ namespace BusReliabilityWeb.Map
                 // Throw away the points with the lowest cost, and re-distribute them along the section based on distance
                 int throwRangeStart = (throwBeforeCost < throwAfterCost) ? throwBeforeIndexes[0] : throwAfterIndexes[0];
                 int throwRangeEnd = (throwBeforeCost < throwAfterCost) ? throwBeforeIndexes[^1] + 1 : throwAfterIndexes[^1] + 1; // exclusive
-                Console.WriteLine($"Throwing away {throwRangeEnd - throwRangeStart} points, from {throwRangeStart} to {throwRangeEnd}");
+                //Console.WriteLine($"Throwing away {throwRangeEnd - throwRangeStart} points, from {throwRangeStart} (inclusive) to {throwRangeEnd} (exclusive)");
 
                 // Set up values used for distance-based interpolation, if we're interpolating
                 double totalThrowDistance = 0;
@@ -116,12 +116,13 @@ namespace BusReliabilityWeb.Map
                     totalThrowDistance = 1; // Prevent dividing by 0 if all points at same location for whatever reason (hopefully can't happen)
 
                 // Re-distribute points and update position
+                // TODO: Consider what happens if we throw away all points in the route
                 for (int i = throwRangeStart; i < throwRangeEnd; i++)
                 {
                     if (throwRangeStart == 0)
-                        points[i].RouteDistance = points[throwRangeStart].RouteDistance;
+                        points[i].RouteDistance = points[throwRangeEnd].RouteDistance;
                     else if (throwRangeEnd == points.Count)
-                        points[i].RouteDistance = points[throwRangeEnd - 1].RouteDistance;
+                        points[i].RouteDistance = points[throwRangeStart - 1].RouteDistance;
                     else
                     {
                         cumulativeThrowDistance += points[i - 1].Point.DistanceTo(points[i].Point);
