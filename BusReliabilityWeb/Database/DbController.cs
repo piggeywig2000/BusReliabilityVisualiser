@@ -50,55 +50,6 @@ namespace BusReliabilityWeb.Database
             return tp;
         }
 
-        public async Task AddTracePoint(TracePoint tracePoint, CancellationToken cancellationToken)
-        {
-            if (db.State == System.Data.ConnectionState.Closed)
-                await db.OpenAsync(cancellationToken);
-            await using MySqlTransaction transaction = await db.BeginTransactionAsync(cancellationToken);
-            await using MySqlCommand command = db.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = @"
-                INSERT INTO `bus_visualiser`.`trace_points`
-                    (`recorded_at`,
-                    `vehicle_ref`,
-                    `service_code`,
-                    `line_id`,
-                    `ticket_machine_service_code`,
-                    `ticket_machine_journey_code`,
-                    `direction`,
-                    `easting`,
-                    `northing`,
-                    `bearing`)
-                VALUES
-                    (@recorded_at,
-                     @vehicle_ref,
-                     @service_code,
-                     @line_id,
-                     @ticket_machine_service_code,
-                     @ticket_machine_journey_code,
-                     @direction,
-                     @easting,
-                     @northing,
-                     @bearing);";
-            command.Parameters.AddWithValue("recorded_at", tracePoint.RecordedAt);
-            command.Parameters.AddWithValue("vehicle_ref", tracePoint.VehicleRef);
-            command.Parameters.AddWithValue("service_code", tracePoint.ServiceCode);
-            command.Parameters.AddWithValue("line_id", tracePoint.LineId);
-            command.Parameters.AddWithValue("ticket_machine_service_code", tracePoint.TicketMachineServiceCode);
-            command.Parameters.AddWithValue("ticket_machine_journey_code", tracePoint.TicketMachineJourneyCode);
-            command.Parameters.AddWithValue("direction", tracePoint.Direction);
-            command.Parameters.AddWithValue("easting", tracePoint.Easting);
-            command.Parameters.AddWithValue("northing", tracePoint.Northing);
-            command.Parameters.AddWithValue("bearing", (object?)tracePoint.Bearing ?? DBNull.Value);
-            int rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
-            if (rowsAffected != 1)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw new Exception($"Failed to insert trace point. Rows affected was {rowsAffected}.");
-            }
-            await transaction.CommitAsync(cancellationToken);
-        }
-
         public async Task AddTracePoints(IReadOnlyCollection<TracePoint> tracePoints, CancellationToken cancellationToken)
         {
             if (db.State == System.Data.ConnectionState.Closed)
@@ -234,6 +185,56 @@ namespace BusReliabilityWeb.Database
                     reader.IsDBNull(reader.GetOrdinal("bearing")) ? null : reader.GetDouble("bearing")));
             }
             return [.. tracePoints];
+        }
+
+        public async Task AddLatenessValues(IReadOnlyCollection<LatenessValue> latenessValues, CancellationToken cancellationToken)
+        {
+            if (db.State == System.Data.ConnectionState.Closed)
+                await db.OpenAsync(cancellationToken);
+            await using MySqlTransaction transaction = await db.BeginTransactionAsync(cancellationToken);
+            await using MySqlCommand command = db.CreateCommand();
+            command.Transaction = transaction;
+            StringBuilder sb = new();
+            sb.Append(@"
+                INSERT INTO `bus_visualiser`.`lateness_values`
+                    (`service_code`,
+                    `line_id`,
+                    `stop_naptan`,
+                    `timetable_date`,
+                    `hour`,
+                    `lateness`)
+                VALUES
+");
+            for (int i = 0; i < latenessValues.Count; i++)
+            {
+                if (i > 0)
+                    sb.AppendLine(",");
+                sb.Append($@"
+                    (@service_code_{i},
+                     @line_id_{i},
+                     @stop_naptan_{i},
+                     @timetable_date_{i},
+                     @hour_{i},
+                     @lateness_{i})");
+            }
+            sb.Append(';');
+            command.CommandText = sb.ToString();
+            foreach ((int i, LatenessValue latenessValue) in latenessValues.Index())
+            {
+                command.Parameters.AddWithValue($"service_code_{i}", latenessValue.ServiceCode);
+                command.Parameters.AddWithValue($"line_id_{i}", latenessValue.LineId);
+                command.Parameters.AddWithValue($"stop_naptan_{i}", latenessValue.StopNaptan);
+                command.Parameters.AddWithValue($"timetable_date_{i}", latenessValue.TimetableDate);
+                command.Parameters.AddWithValue($"hour_{i}", latenessValue.Hour);
+                command.Parameters.AddWithValue($"lateness_{i}", (object?)latenessValue.Lateness ?? DBNull.Value);
+            }
+            int rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+            if (rowsAffected != latenessValues.Count)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw new Exception($"Failed to insert lateness values. Rows affected was {rowsAffected}, should've been {latenessValues.Count}.");
+            }
+            await transaction.CommitAsync(cancellationToken);
         }
     }
 }

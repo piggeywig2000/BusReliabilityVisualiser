@@ -18,6 +18,21 @@ CREATE TABLE `bus_visualiser`.`trace_points` (
   INDEX `idx_ticket_machine_journey_code` (`ticket_machine_journey_code` ASC) VISIBLE;
   INDEX `idx_direction` (`direction` ASC) VISIBLE;
 
+CREATE TABLE `bus_visualiser`.`lateness_values` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `service_code` VARCHAR(40) NOT NULL,
+  `line_id` VARCHAR(40) NOT NULL,
+  `stop_naptan` VARCHAR(20) NOT NULL,
+  `timetable_date` DATE NOT NULL,
+  `hour` TINYINT UNSIGNED NOT NULL,
+  `lateness` DOUBLE NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `id_UNIQUE` (`id` ASC) INVISIBLE,
+  INDEX `idx_service_line` (`service_code` ASC, `line_id` ASC) VISIBLE,
+  INDEX `idx_stop` (`stop_naptan` ASC) VISIBLE,
+  INDEX `idx_timetable_date` (`timetable_date` ASC) VISIBLE);
+
 CREATE USER 'busvisualiserwebapp'@'localhost' IDENTIFIED BY 'password';
 GRANT SELECT, INSERT ON `bus_visualiser`.`trace_points` TO 'busvisualiserwebapp'@'localhost';
+GRANT SELECT, INSERT ON `bus_visualiser`.`lateness_values` TO 'busvisualiserwebapp'@'localhost';
 FLUSH PRIVILEGES;

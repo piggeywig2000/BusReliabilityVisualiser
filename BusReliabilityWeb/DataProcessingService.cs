@@ -66,8 +66,13 @@ namespace BusReliabilityWeb
 
                     // Get planned arrival times
                     Dictionary<string, List<DateTime>> plannedStopTimes = GetPlannedDepartureTimesForLine(txc, timetableService.ServiceCode, line.LineId, date);
+
+                    // Calculate and save lateness values
+                    await CalculateLatenessValues(plannedStopTimes, actualStopTimes, dbController, timetableService.ServiceCode, line.LineId, date, cancellationToken);
                 }
             }
+
+            logger.LogInformation("Processed data for {date:dd/MM/yyyy}", date);
         }
 
         private record TransXChangeDicts
@@ -281,6 +286,77 @@ namespace BusReliabilityWeb
                     consecutiveBlanks = 0;
                 }
             }
+        }
+
+        private async Task CalculateLatenessValues(Dictionary<string, List<DateTime>> plannedStopTimes, Dictionary<string, List<DateTime>> actualStopTimes, DbController dbController, string serviceCode, string lineId, DateOnly date, CancellationToken cancellationToken)
+        {
+            List<LatenessValue> lvsToAdd = [];
+
+            // Process each bus stop
+            foreach ((string naptan, List<DateTime> plannedTimes) in plannedStopTimes)
+            {
+                // Get the actual stop times
+                if (!actualStopTimes.TryGetValue(naptan, out List<DateTime>? actualTimes))
+                    actualTimes = [];
+
+                // Calculate the lateness values for each hour
+                int wrappedDays = 0;
+                for (TimeOnly hour = new(05, 00); hour != new TimeOnly(04, 00); hour = hour.AddHours(1, out int newWrappedDays), wrappedDays = Math.Max(wrappedDays, newWrappedDays))
+                {
+                    DateTime from = new(date.AddDays(wrappedDays), hour);
+                    double? lateness;
+                    TimeSpan? plannedWaitTime = CalculateAverageWaitTime(plannedTimes, from, from.AddHours(1));
+                    if (!plannedWaitTime.HasValue)
+                    {
+                        // No planned buses, so no lateness
+                        lateness = null;
+                    }
+                    else
+                    {
+                        TimeSpan? actualWaitTime = CalculateAverageWaitTime(actualTimes, from, from.AddHours(1));
+                        if (!actualWaitTime.HasValue)
+                        {
+                            // No actual buses, assume actual wait time is time until 5am
+                            TimeSpan timeUntil5am = new TimeOnly(05, 00).ToTimeSpan() - hour.ToTimeSpan();
+                            if (timeUntil5am <= TimeSpan.Zero)
+                                timeUntil5am += TimeSpan.FromDays(1);
+                            actualWaitTime = (timeUntil5am / 2) * timeUntil5am.TotalMinutes;
+                        }
+                        lateness = (actualWaitTime.Value - plannedWaitTime.Value).TotalMinutes;
+                    }
+
+                    lvsToAdd.Add(new(serviceCode, lineId, naptan, date, hour.Hour + (24 * wrappedDays), lateness));
+                }
+            }
+
+            if (lvsToAdd.Count > 0)
+                await dbController.AddLatenessValues(lvsToAdd, cancellationToken);
+        }
+
+        private TimeSpan? CalculateAverageWaitTime(List<DateTime> stopTimes, DateTime rangeStart, DateTime rangeEnd)
+        {
+            List<TimeSpan> weightedWaitTimes = [];
+            while (rangeStart < rangeEnd)
+            {
+                TimeSpan rangeDiff = rangeEnd - rangeStart;
+                DateTime nextBus = stopTimes.Find(st => st > rangeStart);
+                if (nextBus == default)
+                {
+                    // No next bus. Don't add anything else to list
+                    break;
+                }
+
+                // If the next bus comes after the range end, chop it off at the range end
+                bool isNextBusInRange = nextBus <= rangeEnd;
+                TimeSpan headway = nextBus - rangeStart; // Difference from last bus to this bus
+                TimeSpan averageWaitTime = isNextBusInRange ? headway / 2 : ((headway - rangeDiff) + headway) / 2; // Average time each person spends waiting for this next bus
+                TimeSpan weight = isNextBusInRange ? headway : rangeDiff; // This takes into account for the fact that more people are affected when the gap is bigger
+                weightedWaitTimes.Add(averageWaitTime * weight.TotalMinutes);
+
+                rangeStart = nextBus;
+            }
+
+            return weightedWaitTimes.Count == 0 ? null : TimeSpan.FromSeconds(weightedWaitTimes.Average(ts => ts.TotalSeconds));
         }
     }
 }
