@@ -12,7 +12,7 @@ namespace BusReliabilityWeb
             var builder = WebApplication.CreateBuilder(args);
 
             // Add secret config file
-            builder.Configuration.AddJsonFile("appsettings.Private.json");
+            builder.Configuration.AddJsonFile("appsettings.Private.json", true, true);
 
             // Add services to the container.
             builder.Services.AddSingleton<BodsClient>(_ => new(builder.Configuration["BodsApiKey"] ?? throw new InvalidOperationException("No BODS API key provided")));

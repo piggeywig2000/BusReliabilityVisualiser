@@ -1,4 +1,5 @@
-﻿using BodsDotNet;
+﻿using System.Globalization;
+using BodsDotNet;
 using BodsDotNet.Schemas.TransXChange;
 using BusReliabilityWeb.Database;
 using BusReliabilityWeb.Database.Dto;
@@ -10,15 +11,15 @@ namespace BusReliabilityWeb
     public class DataProcessingService : BackgroundService
     {
         private readonly ILogger<DataProcessingService> logger;
+        private readonly IConfiguration configuration;
         private readonly IServiceProvider serviceProvider;
         private readonly TimetableFileManager timetableFileManager;
         private readonly BodsClient bodsClient;
-        private readonly int stopBufferDistance;
 
         public DataProcessingService(ILogger<DataProcessingService> logger, IConfiguration configuration, IServiceProvider serviceProvider, TimetableFileManager timetableFileManager, BodsClient bodsClient)
         {
             this.logger = logger;
-            this.stopBufferDistance = configuration.GetValue<int>("StopBufferDistance");
+            this.configuration = configuration;
             this.serviceProvider = serviceProvider;
             this.timetableFileManager = timetableFileManager;
             this.bodsClient = bodsClient;
@@ -28,8 +29,14 @@ namespace BusReliabilityWeb
         {
             logger.LogInformation("Starting data processing service");
 
-            // TODO: Make configurable immediate calculation system
-            await ProcessData(new DateOnly(2025, 03, 01), stoppingToken);
+            // Process immediate dates
+            foreach (string dateStr in configuration.GetSection("LatenessCalc:Immediate").Get<string[]>() ?? [])
+            {
+                if (DateOnly.TryParseExact(dateStr, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly parsedDate))
+                {
+                    await ProcessData(parsedDate, stoppingToken);
+                }
+            }
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -44,6 +51,15 @@ namespace BusReliabilityWeb
                 await Task.Delay(timeToWait, stoppingToken);
 
                 await ProcessData(Util.GmtNowDate.AddDays(-1), stoppingToken);
+
+                // Process deferred dates
+                foreach (string dateStr in configuration.GetSection("LatenessCalc:Deferred").Get<string[]>() ?? [])
+                {
+                    if (DateOnly.TryParseExact(dateStr, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly parsedDate))
+                    {
+                        await ProcessData(parsedDate, stoppingToken);
+                    }
+                }
             }
         }
 
@@ -123,6 +139,7 @@ namespace BusReliabilityWeb
 
         private async Task<Dictionary<string, List<DateTime>>> GetActualStopDepartureTimesForLine(TransXChange txc, DbController dbController, string serviceCode, string lineId, DateOnly date, CancellationToken cancellationToken)
         {
+            int stopBufferDistance = configuration.GetValue<int>("StopBufferDistance");
             Service service = txc.Services.Service.First(s => s.ServiceCode == serviceCode);
             Line line = service.Lines.First(l => l.Id == lineId);
             TransXChangeDicts txcDicts = new(txc);
