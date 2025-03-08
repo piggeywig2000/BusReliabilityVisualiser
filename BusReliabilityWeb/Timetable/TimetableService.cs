@@ -36,5 +36,13 @@ namespace BusReliabilityWeb.Timetable
             lineNameToLine.TryGetValue(lineName, out TimetableLine? line);
             return line;
         }
+
+        public void RemoveLine(string lineId)
+        {
+            if (!lines.TryGetValue(lineId, out TimetableLine? line))
+                return;
+            lines.Remove(lineId);
+            lineNameToLine.Remove(line.LineName);
+        }
     }
 }

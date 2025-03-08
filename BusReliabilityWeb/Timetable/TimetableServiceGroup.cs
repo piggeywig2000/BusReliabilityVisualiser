@@ -29,5 +29,12 @@ namespace BusReliabilityWeb.Timetable
         public TimetableService GetTimetable(DateOnly date) => timetables
             .Where(tp => tp.IsValidAtDate(date))
             .FirstOrDefault() ?? throw new InvalidOperationException("No timetable for the date specified");
+
+        public void RemoveTimetable(TimetableService period) => timetables.Remove(period);
+
+        public void RemoveEmptyTimetables()
+        {
+            timetables.RemoveAll(tp => tp.Lines.Count == 0);
+        }
     }
 }

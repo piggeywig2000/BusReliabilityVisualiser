@@ -87,8 +87,8 @@ namespace BusReliabilityWeb.Timetable
             }
 
             // If multiple services have same NOC and TMSC, we can't differentiate them. Just drop the services and don't collect data
-            List<TimetableServiceGroup> servicesToRemove = [];
             Dictionary<(string, string), TimetableServiceGroup> newNocTmscToService = [];
+            List<(string, string, TimetableServiceGroup)> pairsToRemove = [];
             foreach ((string noc, string tmsc, TimetableServiceGroup tsg) in newServices.Values
                 .SelectMany(tsg => tsg.Timetables
                     .SelectMany(s => s.Lines
@@ -100,24 +100,41 @@ namespace BusReliabilityWeb.Timetable
                 // If we have a key clash, multiple TxC files are for the same service. We're not going to deal with this
                 if (newNocTmscToService.TryGetValue((noc, tmsc), out TimetableServiceGroup? clashedTsg))
                 {
-                    servicesToRemove.Add(clashedTsg);
-                    servicesToRemove.Add(tsg);
+                    pairsToRemove.Add((noc, tmsc, tsg));
+                    pairsToRemove.Add((noc, tmsc, clashedTsg));
                 }
                 else
                 {
                     newNocTmscToService[(noc, tmsc)] = tsg;
                 }
             }
-            // Remove clashed services
-            foreach (TimetableServiceGroup service in servicesToRemove)
-                newServices.Remove(service.ServiceCode);
-            foreach ((string noc, string tmsc) in servicesToRemove.SelectMany(tsg => tsg.Timetables
-                    .SelectMany(s => s.Lines
-                        .SelectMany(l => l.OperatorNOCs
-                            .SelectMany(noc => l.TicketMachineServiceCodes
-                                .Select(tmsc => (noc, tmsc))))))
-                .Distinct())
+
+            // Remove clashed lines
+            foreach ((string noc, string tmsc, TimetableServiceGroup tsg) in pairsToRemove)
+            {
+                TimetableLine[] linesToRemove = tsg.Timetables
+                    .SelectMany(t => t.Lines)
+                    .Where(l => l.OperatorNOCs.Contains(noc) && l.TicketMachineServiceCodes.Contains(tmsc))
+                    .Distinct()
+                    .ToArray();
+
+                foreach (TimetableLine lineToRemove in linesToRemove)
+                {
+                    TimetableService? service = tsg.Timetables.FirstOrDefault(t => t.Lines.Contains(lineToRemove));
+                    service?.RemoveLine(lineToRemove.LineId);
+                }
+
                 newNocTmscToService.Remove((noc, tmsc));
+            }
+            // Remove now empty services and service groups
+            foreach (TimetableServiceGroup tsg in newServices.Values)
+                tsg.RemoveEmptyTimetables();
+            string[] servicesToRemove = newServices.Values
+                .Where(tsg => tsg.Timetables.Count == 0)
+                .Select(tsg => tsg.ServiceCode)
+                .ToArray();
+            foreach (string serviceCode in servicesToRemove)
+                newServices.Remove(serviceCode);
 
             services = newServices;
             operatorNocs = newServices.Values
