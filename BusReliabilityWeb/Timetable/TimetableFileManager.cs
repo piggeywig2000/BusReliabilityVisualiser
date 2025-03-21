@@ -39,11 +39,11 @@ namespace BusReliabilityWeb.Timetable
 
             // For now just first bus in Bath. Consider multiple timetable sources?
             BodsDotNet.Schemas.Timetable.Timetable timetable = await bodsClient.GetTimetableById(5813, cancellationToken);
-            await bodsClient.DownloadTransXChangeFromUrl(timetable.URL, $"{fileDirectory}/{timetable.Id}", true, cancellationToken);
+            string[] extractedXmls = await bodsClient.DownloadTransXChangeFromUrl(timetable.URL, $"{fileDirectory}/{timetable.Id}/", true, cancellationToken);
 
             // Update services dictionary
             Dictionary<string, TimetableServiceGroup> newServices = [];
-            foreach (string xmlPath in Directory.EnumerateFiles(fileDirectory, "*.xml", SearchOption.AllDirectories))
+            foreach (string xmlPath in Directory.EnumerateFiles(fileDirectory, "*.xml", SearchOption.AllDirectories).Select(Path.GetFullPath))
             {
                 if (!Path.GetFileName(xmlPath).StartsWith("U1"))
                     continue;
@@ -85,6 +85,9 @@ namespace BusReliabilityWeb.Timetable
                     tGroup.AddTimetable(periodToAdd);
                 }
             }
+
+            // Remove retracted services from service groups
+            RemoveRetractedServices(newServices, extractedXmls);
 
             // If multiple services have same NOC and TMSC, we can't differentiate them. Just drop the services and don't collect data
             Dictionary<(string, string), TimetableServiceGroup> newNocTmscToService = [];
@@ -144,6 +147,35 @@ namespace BusReliabilityWeb.Timetable
             nocTmscToService = newNocTmscToService!;
 
             logger.LogInformation("Updated timetables");
+        }
+
+        private void RemoveRetractedServices(Dictionary<string, TimetableServiceGroup> services, string[] newXmls)
+        {
+            for (int i = 0; i < newXmls.Length; i++)
+                newXmls[i] = Path.GetFullPath(newXmls[i]);
+
+            foreach (TimetableServiceGroup tsg in services.Values)
+            {
+                // Get services that were in the ZIP we just downloaded
+                TimetableService[] currentServices = tsg.Timetables
+                    .Where(t => Array.IndexOf(newXmls, t.XmlPath) >= 0)
+                    .ToArray();
+                if (currentServices.Length == 0)
+                    continue;
+                DateOnly currentRangeStart = currentServices.Min(t => t.StartDate);
+                DateOnly currentRangeEnd = currentServices.Max(t => t.StartDate);
+
+                // Delete services not in the ZIP we just downloaded (but within the date range)
+                TimetableService[] servicesToRemove = tsg.Timetables
+                    .Where(t => t.StartDate >= currentRangeStart && t.StartDate <= currentRangeEnd && Array.IndexOf(currentServices, t) < 0)
+                    .ToArray();
+                foreach (TimetableService serviceToRemove in servicesToRemove)
+                {
+                    logger.LogDebug("Deleting timetable file {fileName}", Path.GetFileName(serviceToRemove.XmlPath));
+                    tsg.RemoveTimetable(serviceToRemove);
+                    File.Delete(serviceToRemove.XmlPath);
+                }
+            }
         }
     }
 }

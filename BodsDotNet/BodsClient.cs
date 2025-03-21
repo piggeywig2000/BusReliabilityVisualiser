@@ -41,14 +41,16 @@ namespace BodsDotNet
             }
         }
 
-        public async Task DownloadTransXChangeFromUrl(string url, string downloadPath, bool overwrite = true, CancellationToken cancellationToken = default)
+        public async Task<string[]> DownloadTransXChangeFromUrl(string url, string downloadPath, bool overwrite = true, CancellationToken cancellationToken = default)
         {
             using HttpResponseMessage httpResponse = await httpClient.GetAsync(url, cancellationToken);
             httpResponse.EnsureSuccessStatusCode();
             await using Stream contentStream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
 
             using ZipArchive zipArchive = new(contentStream, ZipArchiveMode.Read);
+            string[] extractedPaths = zipArchive.Entries.Select(e => Path.Join(downloadPath, e.FullName)).ToArray();
             await Task.Run(() => zipArchive.ExtractToDirectory(downloadPath, overwrite), cancellationToken); // No async API for this yet, this is a bodge
+            return extractedPaths;
         }
 
         public async Task<IReadOnlyCollection<Schemas.TransXChange.TransXChange>> GetTransXChangeFromUrl(string url, CancellationToken cancellationToken = default)
