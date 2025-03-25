@@ -29,7 +29,7 @@ namespace BusReliabilityWeb.Controllers
             foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(Util.GmtNowDate).SelectMany(s => s.Lines))
             {
                 LatenessValue[] latenessValues = await dbController.GetLatenessValuesForLine(line.ServiceCode, line.LineId, cancellationToken);
-                List<DataBusStop> stops = [];
+                Dictionary<string, DataBusStop> stops = [];
                 Dictionary<string, List<DataLateness>> naptanToLateness = [];
 
                 // Group all lateness values by stop
@@ -46,7 +46,7 @@ namespace BusReliabilityWeb.Controllers
                 // Add stops with lateness to final data list
                 foreach (TimetableBusStop stop in line.BusStops)
                 {
-                    stops.Add(new(stop.StopPointRef, stop.Name, naptanToLateness.GetValueOrDefault(stop.StopPointRef, [])));
+                    stops.Add(stop.StopPointRef, new(stop.StopPointRef, stop.Name, naptanToLateness.GetValueOrDefault(stop.StopPointRef, [])));
                 }
 
                 // Add line

@@ -4,7 +4,7 @@
 
 interface DataLine {
     name: string;
-    busStops: DataBusStop[];
+    busStops: { [stopPointRef: string]: DataBusStop };
     lineSections: DataLineSection[];
 }
 
@@ -17,7 +17,7 @@ interface DataBusStop {
 interface DataLateness {
     date: Date;
     hour: number;
-    lateness: number;
+    lateness: number | null;
 }
 
 interface DataLineSection {
