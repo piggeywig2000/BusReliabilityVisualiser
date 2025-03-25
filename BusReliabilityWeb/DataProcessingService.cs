@@ -91,25 +91,11 @@ namespace BusReliabilityWeb
             logger.LogInformation("Processed data for {date:dd/MM/yyyy}", date);
         }
 
-        private record TransXChangeDicts
-        {
-            public TransXChangeDicts(TransXChange txc)
-            {
-                StopPoints = txc.StopPoints.AnnotatedStopPointRef.ToDictionary(sp => sp.StopPointRef);
-                RouteLinks = txc.RouteSections.RouteSection.SelectMany(rs => rs.RouteLink).ToDictionary(rl => rl.Id);
-                JourneyPatternSections = txc.JourneyPatternSections.JourneyPatternSection.ToDictionary(jps => jps.Id);
-            }
-
-            public IReadOnlyDictionary<string, AnnotatedStopPointRef> StopPoints { get; }
-            public IReadOnlyDictionary<string, RouteLink> RouteLinks { get; }
-            public IReadOnlyDictionary<string, JourneyPatternSection> JourneyPatternSections { get; }
-        }
-
         private Dictionary<string, List<DateTime>> GetPlannedDepartureTimesForLine(TransXChange txc, string serviceCode, string lineId, DateOnly date)
         {
             Service service = txc.Services.Service.First(s => s.ServiceCode == serviceCode);
             Line line = service.Lines.First(l => l.Id == lineId);
-            TransXChangeDicts txcDicts = new(txc);
+            Util.TransXChangeDicts txcDicts = new(txc);
 
             Dictionary<string, List<DateTime>> stopToDepartureTimes = [];
 
@@ -142,7 +128,7 @@ namespace BusReliabilityWeb
             int stopBufferDistance = configuration.GetValue<int>("StopBufferDistance");
             Service service = txc.Services.Service.First(s => s.ServiceCode == serviceCode);
             Line line = service.Lines.First(l => l.Id == lineId);
-            TransXChangeDicts txcDicts = new(txc);
+            Util.TransXChangeDicts txcDicts = new(txc);
 
             Dictionary<string, List<DateTime>> stopToDepartureTimes = [];
 
@@ -208,7 +194,7 @@ namespace BusReliabilityWeb
             return stopToDepartureTimes;
         }
 
-        private Map.Route GetPlannedRouteFromTransXChange(VehicleJourney vehicleJourney, JourneyPatternStructure journeyPattern, TransXChangeDicts txcDicts, DateOnly date)
+        private Map.Route GetPlannedRouteFromTransXChange(VehicleJourney vehicleJourney, JourneyPatternStructure journeyPattern, Util.TransXChangeDicts txcDicts, DateOnly date)
         {
             Map.Route plannedRoute = new();
             DateTime departureTime = new(date, TimeOnly.FromTimeSpan(vehicleJourney.DepartureTime.TimeOfDay));

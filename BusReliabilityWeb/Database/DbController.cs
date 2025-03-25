@@ -236,5 +236,38 @@ namespace BusReliabilityWeb.Database
             }
             await transaction.CommitAsync(cancellationToken);
         }
+
+        public async Task<LatenessValue[]> GetLatenessValuesForLine(string serviceCode, string lineId, CancellationToken cancellationToken)
+        {
+            if (db.State == System.Data.ConnectionState.Closed)
+                await db.OpenAsync(cancellationToken);
+            await using MySqlCommand command = db.CreateCommand();
+            command.CommandText = @"
+                SELECT `lateness_values`.`service_code`,
+                    `lateness_values`.`line_id`,
+                    `lateness_values`.`stop_naptan`,
+                    `lateness_values`.`timetable_date`,
+                    `lateness_values`.`hour`,
+                    `lateness_values`.`lateness`
+                FROM `bus_visualiser`.`lateness_values`
+                WHERE `lateness_values`.`service_code` = @service_code AND
+                    `lateness_values`.`line_id` = @line_id
+                ORDER BY `lateness_values`.`stop_naptan` ASC, `lateness_values`.`timetable_date` DESC, `lateness_values`.`hour` ASC;";
+            command.Parameters.AddWithValue("service_code", serviceCode);
+            command.Parameters.AddWithValue("line_id", lineId);
+            await using MySqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+            List<LatenessValue> latenessValues = [];
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                latenessValues.Add(new(
+                    reader.GetString("service_code"),
+                    reader.GetString("line_id"),
+                    reader.GetString("stop_naptan"),
+                    reader.GetDateOnly("timetable_date"),
+                    reader.GetInt32("hour"),
+                    reader.IsDBNull(reader.GetOrdinal("lateness")) ? null : reader.GetDouble("lateness")));
+            }
+            return [.. latenessValues];
+        }
     }
 }

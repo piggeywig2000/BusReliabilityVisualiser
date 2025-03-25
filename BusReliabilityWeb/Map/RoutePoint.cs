@@ -6,7 +6,7 @@ using GeoUK.Projections;
 
 namespace BusReliabilityWeb.Map
 {
-    internal class RoutePoint(double easting, double northing, double bearing) : IEquatable<RoutePoint>
+    public class RoutePoint(double easting, double northing, double bearing) : IEquatable<RoutePoint>
     {
         public RoutePoint(double easting, double northing) : this(easting, northing, 0) { }
 

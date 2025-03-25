@@ -24,6 +24,7 @@ namespace BusReliabilityWeb
                 builder.Services.AddHostedService<LocationScraperService>();
             builder.Services.AddHostedService<DataProcessingService>();
             builder.Services.AddRazorPages();
+            builder.Services.AddControllers();
 
             var app = builder.Build();
 
@@ -40,6 +41,7 @@ namespace BusReliabilityWeb
             app.MapStaticAssets();
             app.MapRazorPages()
                .WithStaticAssets();
+            app.MapControllers();
 
             app.Run();
         }

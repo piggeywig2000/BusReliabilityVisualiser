@@ -12,11 +12,12 @@
     "outDir": "./wwwroot/js",
     "rootDir": "./wwwroot/ts",
     "typeRoots": [ "./wwwroot/ts/@types" ],
-    "types": [ "leaflet" ],
+    "types": [ "leaflet", "leaflet-polylineoffset" ],
     "esModuleInterop": true,
     "baseUrl": "./",
     "paths": {
-      "leaflet": [ "wwwroot/lib/leaflet/leaflet.js" ]
+      "leaflet": [ "wwwroot/lib/leaflet/leaflet.js" ],
+      "leaflet-polylineoffset": [ "wwwroot/lib/leaflet-polylineoffset/leaflet.polylineoffset.js" ]
     }
   },
   "include": [

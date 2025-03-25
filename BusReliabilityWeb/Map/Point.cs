@@ -3,7 +3,7 @@ using GeoUK.Coordinates;
 
 namespace BusReliabilityWeb.Map
 {
-    internal readonly struct Point(double easting, double northing) : IEquatable<Point>
+    public readonly struct Point(double easting, double northing) : IEquatable<Point>
     {
         public double Easting { get; } = easting;
         public double Northing { get; } = northing;

@@ -4,7 +4,7 @@ using BodsDotNet.Schemas.TransXChange;
 
 namespace BusReliabilityWeb.Map
 {
-    internal class Route
+    public class Route
     {
         private readonly List<RoutePoint> points = [];
         private readonly List<Stop> stops = [];

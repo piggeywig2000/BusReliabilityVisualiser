@@ -154,5 +154,19 @@ namespace BusReliabilityWeb
 
             return new DateOnly(year, month, day);
         }
+
+        public record TransXChangeDicts
+        {
+            public TransXChangeDicts(TransXChange txc)
+            {
+                StopPoints = txc.StopPoints.AnnotatedStopPointRef.ToDictionary(sp => sp.StopPointRef);
+                RouteLinks = txc.RouteSections.RouteSection.SelectMany(rs => rs.RouteLink).ToDictionary(rl => rl.Id);
+                JourneyPatternSections = txc.JourneyPatternSections.JourneyPatternSection.ToDictionary(jps => jps.Id);
+            }
+
+            public IReadOnlyDictionary<string, AnnotatedStopPointRef> StopPoints { get; }
+            public IReadOnlyDictionary<string, RouteLink> RouteLinks { get; }
+            public IReadOnlyDictionary<string, JourneyPatternSection> JourneyPatternSections { get; }
+        }
     }
 }

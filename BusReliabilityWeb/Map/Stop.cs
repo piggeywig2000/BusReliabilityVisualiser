@@ -1,6 +1,6 @@
 ﻿namespace BusReliabilityWeb.Map
 {
-    internal class Stop(string naptan, string name, double routeDistance, Point point, DateTime departureTime)
+    public class Stop(string naptan, string name, double routeDistance, Point point, DateTime departureTime)
     {
         public string Naptan { get; } = naptan;
         public string Name { get; } = name;
