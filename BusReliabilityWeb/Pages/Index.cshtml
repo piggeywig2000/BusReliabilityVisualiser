@@ -5,11 +5,17 @@
 }
 
 @section Stylesheets {
-    <link href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" rel="stylesheet" />
+    <link href="~/lib/leaflet/leaflet.css" rel="stylesheet" />
+    <link href="~/css/index.css" rel="stylesheet" />
 }
 
 @section Scripts {
-    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+    <script src="~/lib/leaflet/leaflet.js"></script>
+    <script>
+        window.AppConfig = window.AppConfig || {};
+        window.AppConfig.STADIA_API_KEY = @Html.Raw(Json.Serialize(Model.StadiaAPIKey));
+    </script>
+    <script src="~/js/index.js" asp-append-version="true"></script>
 }
 
-<p>Test</p>
+<div id="map"></div>

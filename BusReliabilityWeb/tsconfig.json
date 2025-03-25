@@ -1,0 +1,28 @@
+{
+  "compileOnSave": true,
+  "compilerOptions": {
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "noEmitOnError": true,
+    "removeComments": false,
+    "sourceMap": true,
+    "target": "ES6",
+    "module": "none",
+    "outDir": "./wwwroot/js",
+    "rootDir": "./wwwroot/ts",
+    "typeRoots": [ "./wwwroot/ts/@types" ],
+    "types": [ "leaflet" ],
+    "esModuleInterop": true,
+    "baseUrl": "./",
+    "paths": {
+      "leaflet": [ "wwwroot/lib/leaflet/leaflet.js" ]
+    }
+  },
+  "include": [
+    "wwwroot/ts/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

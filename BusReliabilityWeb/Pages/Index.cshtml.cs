@@ -7,10 +7,13 @@ namespace BusReliabilityWeb.Pages
     {
         private readonly ILogger<IndexModel> _logger;
 
-        public IndexModel(ILogger<IndexModel> logger)
+        public IndexModel(ILogger<IndexModel> logger, IConfiguration configuration)
         {
             _logger = logger;
+            StadiaAPIKey = configuration.GetValue<string>("StadiaApiKey") ?? "";
         }
+
+        public string StadiaAPIKey { get; set; }
 
         public void OnGet()
         {

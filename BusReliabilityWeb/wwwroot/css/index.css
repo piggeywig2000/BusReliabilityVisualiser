@@ -1,0 +1,9 @@
+﻿#map {
+    height: 100%;
+    width: 100%;
+    position: absolute;
+}
+
+.tile-layer-greyscale {
+    filter: grayscale(0.8) contrast(0.2) brightness(1.6)
+}
