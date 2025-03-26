@@ -338,10 +338,11 @@ namespace BusReliabilityWeb
 
         private TimeSpan? CalculateAverageWaitTime(List<DateTime> stopTimes, DateTime rangeStart, DateTime rangeEnd)
         {
+            int? maxWaitTimeMinutes = configuration.GetValue<int?>("MaxWaitTime", null);
+            TimeSpan? maxWaitTime = maxWaitTimeMinutes.HasValue ? TimeSpan.FromMinutes(maxWaitTimeMinutes.Value) : null;
             List<TimeSpan> weightedWaitTimes = [];
             while (rangeStart < rangeEnd)
             {
-                TimeSpan rangeDiff = rangeEnd - rangeStart;
                 DateTime nextBus = stopTimes.Find(st => st > rangeStart);
                 if (nextBus == default)
                 {
@@ -349,8 +350,21 @@ namespace BusReliabilityWeb
                     break;
                 }
 
-                // If the next bus comes after the range end, chop it off at the range end
+                // Handle max wait time
                 bool isNextBusInRange = nextBus <= rangeEnd;
+                if (maxWaitTime != null && !isNextBusInRange && nextBus - rangeEnd > maxWaitTime)
+                {
+                    // Next bus is out of range, and later than the max wait time
+                    break;
+                }
+                if (maxWaitTime != null && nextBus - maxWaitTime.Value > rangeStart)
+                {
+                    // Recalculate start to account for max wait time
+                    rangeStart = nextBus - maxWaitTime.Value;
+                }
+
+                // Calculate average wait time
+                TimeSpan rangeDiff = rangeEnd - rangeStart;
                 TimeSpan headway = nextBus - rangeStart; // Difference from last bus to this bus
                 TimeSpan averageWaitTime = isNextBusInRange ? headway / 2 : ((headway - rangeDiff) + headway) / 2; // Average time each person spends waiting for this next bus
                 TimeSpan weight = isNextBusInRange ? headway : rangeDiff; // This takes into account for the fact that more people are affected when the gap is bigger
