@@ -8,7 +8,7 @@ namespace BusReliabilityWeb
         public static DateOnly GmtNowDate => DateOnly.FromDateTime(GmtNow);
         public static TimeOnly GmtNowTime => TimeOnly.FromDateTime(GmtNow);
         public static DateTime GmtNow => DateTime.UtcNow.ConvertUtcToGmt();
-        public static DateTime ConvertUtcToGmt(this DateTime dt) => TimeZoneInfo.ConvertTimeFromUtc(dt, GmtTimeZone);
+        public static DateTime ConvertUtcToGmt(this DateTime dt) => TimeZoneInfo.ConvertTimeFromUtc(dt.ToUniversalTime(), GmtTimeZone);
 
         public static double AngleDifference(this double thisAngle, double otherAngle)
         {

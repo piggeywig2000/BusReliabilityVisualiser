@@ -82,7 +82,7 @@ namespace BusReliabilityWeb
             foreach (VehicleActivityStructure va in loc.ServiceDelivery.VehicleMonitoringDelivery
                 .Where(vmd => vmd.VehicleActivitySpecified)
                 .SelectMany(vmd => vmd.VehicleActivity)
-                .Where(va => TimeOnly.FromDateTime(va.RecordedAtTime) < new TimeOnly(04, 00) || TimeOnly.FromDateTime(va.RecordedAtTime) >= new TimeOnly(05, 00)))
+                .Where(va => TimeOnly.FromDateTime(va.RecordedAtTime.ConvertUtcToGmt()) < new TimeOnly(04, 00) || TimeOnly.FromDateTime(va.RecordedAtTime.ConvertUtcToGmt()) >= new TimeOnly(05, 00)))
             {
                 XmlNamespaceManager nsManager = new(va.Extensions.Any[0].OwnerDocument.NameTable);
                 nsManager.AddNamespace("siri", "http://www.siri.org.uk/siri");
