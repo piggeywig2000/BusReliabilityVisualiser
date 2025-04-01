@@ -42,21 +42,41 @@ namespace BusReliabilityWeb
 
             // Bank holidays
             if (operatingProfile.BankHolidayOperation != null && operatingProfile.BankHolidayOperation.DaysOfNonOperation != null &&
-                IsSpecifiedBankHoliday(operatingProfile.BankHolidayOperation.DaysOfNonOperation, date))
+                operatingProfile.BankHolidayOperation.DaysOfNonOperation.IsSpecifiedBankHoliday(date))
             {
                 return false; // Guarenteed to not run (takes precedence if conflicts)
             }
             if (operatingProfile.BankHolidayOperation != null && operatingProfile.BankHolidayOperation.DaysOfOperation != null &&
-                IsSpecifiedBankHoliday(operatingProfile.BankHolidayOperation.DaysOfOperation, date))
+                operatingProfile.BankHolidayOperation.DaysOfOperation.IsSpecifiedBankHoliday(date))
             {
                 return true; // Guarenteed to run
             }
 
             // Regular operation days
-            bool correctDay = CorrectDayOfWeek(operatingProfile.RegularDayType, date.DayOfWeek) &&
+            bool correctDay = operatingProfile.RegularDayType.CorrectDayOfWeek(date.DayOfWeek) &&
                 (!operatingProfile.PeriodicDayTypeSpecified || CorrectWeekOfMonth(operatingProfile.PeriodicDayType, date));
 
             return correctDay;
+        }
+        public static void GetRegularDays(this OperatingProfileStructure operatingProfile, out DayOfWeek[] regularDays)
+        {
+            List<DayOfWeek> days = [];
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Monday))
+                days.Add(DayOfWeek.Monday);
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Tuesday))
+                days.Add(DayOfWeek.Tuesday);
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Wednesday))
+                days.Add(DayOfWeek.Wednesday);
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Thursday))
+                days.Add(DayOfWeek.Thursday);
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Friday))
+                days.Add(DayOfWeek.Friday);
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Saturday))
+                days.Add(DayOfWeek.Saturday);
+            if (operatingProfile.RegularDayType.CorrectDayOfWeek(DayOfWeek.Sunday))
+                days.Add(DayOfWeek.Sunday);
+
+            regularDays = [.. days];
         }
         private static bool CorrectDayOfWeek(this RegularOperationStructure regularOperation, DayOfWeek dow)
         {
@@ -86,7 +106,7 @@ namespace BusReliabilityWeb
             => periodicOperation.Any(wom => wom.WeekNumber != WeekInMonthEnumeration.Last ?
                 (int)wom.WeekNumber == date.Day / 7 : // First/second/third/etc week in month
                 date.AddDays(7).Month != date.Month); // Last day of week in month
-        private static bool IsSpecifiedBankHoliday(BankHolidaysStructure holidays, DateOnly date)
+        private static bool IsSpecifiedBankHoliday(this BankHolidaysStructure holidays, DateOnly date)
         {
             DateOnly easterSunday = CalculateEasterSundayForYear(date.Year);
 

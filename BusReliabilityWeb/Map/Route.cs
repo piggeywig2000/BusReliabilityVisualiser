@@ -17,6 +17,59 @@ namespace BusReliabilityWeb.Map
         public int PointCount => points.Count;
         public int StopCount => stops.Count;
 
+        public static Route FromTransXChange(VehicleJourney vehicleJourney, JourneyPatternStructure journeyPattern, Util.TransXChangeDicts txcDicts, DateOnly date)
+        {
+            Route plannedRoute = new();
+            DateTime departureTime = new(date, TimeOnly.FromTimeSpan(vehicleJourney.DepartureTime.TimeOfDay));
+            if (TimeOnly.FromTimeSpan(departureTime.TimeOfDay) < new TimeOnly(04, 30))
+                departureTime = departureTime.AddDays(1); // Handle night buses using yesterday's schedule
+            Dictionary<string, VehicleJourneyTimingLink> jptlToVjtl = vehicleJourney.VehicleJourneyTimingLink.ToDictionary(vjtl => vjtl.JourneyPatternTimingLinkRef.Value);
+
+            // Iterate over each timing link, adding stops and track points
+            foreach (JourneyPatternTimingLink jptl in journeyPattern.JourneyPatternSectionRefs
+                .SelectMany(jpsRef => txcDicts.JourneyPatternSections[jpsRef.Value].JourneyPatternTimingLink))
+            {
+                RouteLink rl = txcDicts.RouteLinks[jptl.RouteLinkRef.Value];
+                VehicleJourneyTimingLink vjtl = jptlToVjtl[jptl.Id];
+
+                if (!rl.TrackSpecified)
+                    throw new NotImplementedException();
+
+                // Add From stop wait time
+                if (vjtl.From.WaitTimeSpecified)
+                    departureTime += vjtl.From.WaitTime;
+                else if (jptl.From.WaitTimeSpecified)
+                    departureTime += jptl.From.WaitTime; // vjtl's wait time overrides jptl's wait time
+
+                // Create or amend From stop
+                if (plannedRoute.StopCount == 0 || plannedRoute.Stops[^1].Naptan != jptl.From.StopPointRef.Value)
+                    plannedRoute.AppendBusStop(jptl.From.StopPointRef.Value, txcDicts.StopPoints[jptl.From.StopPointRef.Value].CommonName.Value, departureTime);
+                else
+                    plannedRoute.Stops[^1].DepartureTime = departureTime;
+
+                // Insert track points
+                foreach (LocationStructure loc in rl.Track.SelectMany(t => t.Mapping))
+                {
+                    RoutePoint pnt = RoutePoint.FromTransXChange(loc);
+                    if (plannedRoute.PointCount > 0 && pnt == plannedRoute.Points[^1])
+                        continue; // Same position as last
+                    plannedRoute.AppendPoint(pnt);
+                }
+
+                // Add run time and To stop wait time
+                departureTime += vjtl.RunTimeSpecified ? vjtl.RunTime : jptl.RunTime;
+                if (vjtl.To.WaitTimeSpecified)
+                    departureTime += vjtl.To.WaitTime;
+                else if (jptl.To.WaitTimeSpecified)
+                    departureTime += jptl.To.WaitTime; // vjtl's wait time overrides jptl's wait time
+
+                // Create To stop
+                plannedRoute.AppendBusStop(jptl.To.StopPointRef.Value, txcDicts.StopPoints[jptl.To.StopPointRef.Value].CommonName.Value, departureTime);
+            }
+
+            return plannedRoute;
+        }
+
         public void AppendPoint(RoutePoint point)
         {
             RoutePoint? lastPoint = points.LastOrDefault();

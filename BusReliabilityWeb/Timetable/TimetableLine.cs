@@ -53,6 +53,27 @@ namespace BusReliabilityWeb.Timetable
                 .ToArray();
 
             // Get all line sections used by this line
+            List<Map.Route> journeys = [];
+            foreach (VehicleJourney vehicleJourney in txc.VehicleJourneys.VehicleJourney
+            .Where(vj => vj.ServiceRef.Value == service.ServiceCode &&
+                vj.LineRef == line.Id))
+            {
+                vehicleJourney.OperatingProfile.GetRegularDays(out DayOfWeek[] regularDays);
+                if (regularDays.Length == 0)
+                    continue;
+                JourneyPatternStructure journeyPattern = service.StandardService.JourneyPattern.First(jp => jp.Id == vehicleJourney.JourneyPatternRef);
+
+                foreach (DayOfWeek dow in regularDays)
+                {
+                    DateOnly date = new DateOnly(1, 1, 1).AddDays((((int)dow) + 6) % 7); // Date will have correct day of week
+                    if (date.DayOfWeek != dow)
+                        throw new InvalidOperationException("Day of week calculation failed. This should never happen!");
+                    Map.Route plannedRoute = Map.Route.FromTransXChange(vehicleJourney, journeyPattern, txcDicts, date);
+                    journeys.Add(plannedRoute);
+                }
+            }
+            Map.Route[] journeysArr = [.. journeys];
+
             lineSections = txc.VehicleJourneys.VehicleJourney
                 .Where(vj => vj.ServiceRef.Value == service.ServiceCode && vj.LineRef == line.Id)
                 .DistinctBy(vj => vj.JourneyPatternRef)
@@ -60,7 +81,7 @@ namespace BusReliabilityWeb.Timetable
                 .SelectMany(jpsRef => txcDicts.JourneyPatternSections[jpsRef.Value].JourneyPatternTimingLink)
                 .Select(jptl => txcDicts.RouteLinks[jptl.RouteLinkRef.Value])
                 .DistinctBy(rl => (rl.From.StopPointRef.Value, rl.To.StopPointRef.Value))
-                .Select(rl => new TimetableLineSection(rl))
+                .Select(rl => new TimetableLineSection(rl, journeysArr))
                 .ToArray();
         }
 

@@ -54,6 +54,7 @@ class BusLineSection implements DataLineSection {
     fromStopPointRef: string;
     toStopPointRef: string;
     track: DataTrack[];
+    usage: DataLineUsage[];
 
     fromStopPoint: DataBusStop;
     toStopPoint: DataBusStop;
@@ -62,6 +63,7 @@ class BusLineSection implements DataLineSection {
         this.fromStopPointRef = dataLineSection.fromStopPointRef;
         this.toStopPointRef = dataLineSection.toStopPointRef;
         this.track = dataLineSection.track;
+        this.usage = dataLineSection.usage;
         this.fromStopPoint = busStops[this.fromStopPointRef];
         this.toStopPoint = busStops[this.toStopPointRef];
     }
@@ -71,22 +73,40 @@ class BusLineSection implements DataLineSection {
     }
 }
 
-function latenessToColour(lateness: number): string {
+function latenessToColour(lateness: number, averageUsage: number, maxUsage: number): string {
     const GRN = 0;
-    const RED = 10;
+    const RED = 20;
     const hue = Math.max(0, Math.min(120, 120 - ((lateness - GRN) / (RED - GRN)) * 120));
-    return `hsl(${hue}, 100%, 50%)`;
+    return `hsla(${hue}, 100%, 50%, ${(averageUsage / maxUsage) * 0.9})`;
+}
+
+function isValidUsageValue(usage: DataLineUsage): boolean {
+    return usage.hour >= 19 && usage.hour < 24 && (
+        usage.dayOfWeek === DayOfWeek.Monday ||
+        usage.dayOfWeek === DayOfWeek.Tuesday ||
+        usage.dayOfWeek === DayOfWeek.Wednesday ||
+        usage.dayOfWeek === DayOfWeek.Thursday ||
+        usage.dayOfWeek === DayOfWeek.Friday);
 }
 
 async function init() {
     const response: Response = await fetch("api/data");
     const rawData: DataResponse = JSON.parse(await response.text(), dataReviver) as DataResponse;
     const data: BusData = BusData.fromData(rawData);
+
+    // Calculate max usage
+    const maxUsage = data.lines["U1"].lineSections
+        .map(ls => ls.usage
+            .filter(isValidUsageValue)
+            .map(u => u.busesPerHour)
+            .reduce((maxBph, current) => Math.max(maxBph, current), 0))
+        .reduce((maxBph, current) => Math.max(maxBph, current), 0);
+
     for (const lineSection of data.lines["U1"].lineSections) {
         // Get lateness values for both end of the line
         let fromTotal = 0;
         let fromLateness = lineSection.fromStopPoint.latenessValues
-            .filter(dl => dl.date.getDay() != 0 && dl.date.getDay() != 6)
+            .filter(dl => dl.date.getDay() != 0 && dl.date.getDay() != 6 && dl.hour >= 19 && dl.hour < 24)
             .map(dl => dl.lateness)
             .reduce((accumulator, current) => {
             if (current !== null) {
@@ -97,7 +117,7 @@ async function init() {
         }, 0);
         let toTotal = 0;
         let toLateness = lineSection.toStopPoint.latenessValues
-            .filter(dl => dl.date.getDay() != 0 && dl.date.getDay() != 6)
+            .filter(dl => dl.date.getDay() != 0 && dl.date.getDay() != 6 && dl.hour >= 19 && dl.hour < 24)
             .map(dl => dl.lateness)
             .reduce((accumulator, current) => {
             if (current !== null) {
@@ -114,16 +134,25 @@ async function init() {
         fromLateness = fromTotal === 0 ? null : (fromLateness ?? 0) / fromTotal;
         toLateness = toTotal === 0 ? null : (toLateness ?? 0) / toTotal;
 
+        // Calculate average usage
+        const busPerHoursEntries = lineSection.usage
+            .filter(isValidUsageValue)
+            .map(ele => ele.busesPerHour);
+        const averageUsage = busPerHoursEntries.reduce((accumulator, current) => accumulator + current, 0) / busPerHoursEntries.length;
+        if (averageUsage === 0) {
+            continue; // This section never gets used
+        }
+
         // Generate lines on the map
         for (let i = 0; i < lineSection.track.length - 1; i++) {
             let colour: string | null = null;
             if (fromLateness !== null && toLateness !== null) {
                 let proportion = (i + 1) / (lineSection.track.length + 1);
-                colour = latenessToColour(((1 - proportion) * fromLateness) + (proportion * toLateness));
+                colour = latenessToColour(((1 - proportion) * fromLateness) + (proportion * toLateness), averageUsage, maxUsage);
             } else if (fromLateness !== null) {
-                colour = latenessToColour(fromLateness);
+                colour = latenessToColour(fromLateness, averageUsage, maxUsage);
             } else if (toLateness !== null) {
-                colour = latenessToColour(toLateness);
+                colour = latenessToColour(toLateness, averageUsage, maxUsage);
             }
             L.polyline(
                 lineSection.track
@@ -132,7 +161,8 @@ async function init() {
                 {
                     color: colour ?? "black",
                     weight: 6,
-                    offset: -3
+                    offset: -3,
+                    lineCap: "butt"
                 }).addTo(map);
         }
     }
