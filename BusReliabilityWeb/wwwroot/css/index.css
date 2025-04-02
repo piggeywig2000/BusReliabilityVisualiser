@@ -1,7 +1,43 @@
-﻿#map {
+﻿#root {
     height: 100%;
     width: 100%;
-    position: absolute;
+    position: fixed;
+    display: grid;
+    grid-template-columns: [map-start] 1fr [map-end lines-start] fit-content(80%) [lines-end];
+    grid-template-rows: [map-start] 1fr [map-end timerange-start] 4rem [timerange-end];
+    grid-template-areas:
+        "map lines"
+        "timerange lines";
+    gap: 8px 8px;
+    padding: 8px;
+}
+
+#map {
+    grid-area: map;
+}
+
+#lines {
+    grid-area: lines;
+    display: flex;
+    flex-flow: column nowrap;
+    justify-content: flex-start;
+    gap: 0.5rem;
+}
+
+#lines-list {
+    flex: 1 1 auto;
+}
+
+.line-item {
+    padding: 2px 0;
+    display: block;
+}
+.line-item, .line-item * {
+    cursor: pointer;
+}
+
+#timerange {
+    grid-area: timerange;
 }
 
 .tile-layer-greyscale {
