@@ -68,6 +68,8 @@ let currentLine: string | null = "all";
 
 // Create map
 const map: L.Map = L.map("map").setView([51.3776019, -2.3567216], 14);
+let lastZoomLevel = 14;
+const LINE_STYLE_ZOOM_THRESHOLD = 14;
 //L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 //    maxZoom: 19,
 //    attribution: `&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>`,
@@ -85,6 +87,31 @@ L.tileLayer(`https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.pn
 }).addTo(map); // Stadia maps layer no key
 
 let linesLayer: L.LayerGroup<any> = L.layerGroup().addTo(map);
+
+map.on("zoomend", (ev) => {
+    let currentZoomLevel = map.getZoom();
+    let newLineStyle: L.LineCapShape | null = null;
+    let newOpacityMultiplier: number | null = null;
+    if (currentZoomLevel >= LINE_STYLE_ZOOM_THRESHOLD && lastZoomLevel < LINE_STYLE_ZOOM_THRESHOLD) {
+        newLineStyle = "butt";
+        newOpacityMultiplier = 4;
+    }
+    else if (currentZoomLevel < LINE_STYLE_ZOOM_THRESHOLD && lastZoomLevel >= LINE_STYLE_ZOOM_THRESHOLD) {
+        newLineStyle = "round";
+        newOpacityMultiplier = 1 / 4;
+    }
+    if (newLineStyle !== null && newOpacityMultiplier !== null) {
+        lastZoomLevel = currentZoomLevel;
+        linesLayer.eachLayer((lineLayer) => {
+            if (lineLayer instanceof L.Polyline) {
+                lineLayer.setStyle({
+                    lineCap: newLineStyle,
+                    opacity: (lineLayer.options.opacity ?? 1) * newOpacityMultiplier
+                });
+            }
+        });
+    }
+});
 
 async function init(): Promise<void> {
     await initData();
@@ -153,10 +180,13 @@ function redrawMap(): void {
     // Calculate max usage
     const maxUsage = activeLines
         .map(l => l.lineSections
-            .map(ls => ls.usage
-                .filter(isValidUsageValue)
-                .map(u => u.busesPerHour)
-                .reduce((maxBph, current) => Math.max(maxBph, current), 0))
+            .map(ls => {
+                let bphValues = ls.usage
+                    .filter(isValidUsageValue)
+                    .map(u => u.busesPerHour)
+                let sumBphForSection = bphValues.reduce((accumulator, current) => accumulator + current, 0);
+                return sumBphForSection / bphValues.length;
+            })
             .reduce((maxBph, current) => Math.max(maxBph, current), 0)
         ).reduce((maxBph, current) => Math.max(maxBph, current), 0);
 
@@ -209,20 +239,23 @@ function redrawMap(): void {
                     let proportion = (i + 1) / (lineSection.track.length + 1);
                     colour = latenessToColour(((1 - proportion) * fromLateness) + (proportion * toLateness));
                 } else if (fromLateness !== null) {
-                    colour = latenessToColour(fromLateness, );
+                    colour = latenessToColour(fromLateness);
                 } else if (toLateness !== null) {
                     colour = latenessToColour(toLateness);
                 }
+                if (colour === null)
+                    continue; // Should be impossible
                 L.polyline(
                     lineSection.track
                         .slice(i, i + 2)
                         .map(track => L.latLng(track.latitude, track.longitude)),
                     {
-                        color: colour ?? "black",
+                        color: colour,
                         opacity: usageToOpacity(averageUsage, maxUsage),
                         weight: 6,
                         offset: -3,
-                        lineCap: "butt"
+                        lineCap: map.getZoom() >= LINE_STYLE_ZOOM_THRESHOLD ? "butt" : "round",
+                        className: "leaflet-bus-line"
                     }).addTo(linesLayer);
             }
         }
@@ -237,7 +270,8 @@ function latenessToColour(lateness: number): string {
 }
 
 function usageToOpacity(averageUsage: number, maxUsage: number): number {
-    return (averageUsage / maxUsage) * 0.9;
+    let opacity = (averageUsage / maxUsage) * (currentLine === "all" ? 0.5 : 0.8);
+    return map.getZoom() < LINE_STYLE_ZOOM_THRESHOLD ? opacity / 4 : opacity;
 }
 
 function isValidUsageValue(usage: DataLineUsage): boolean {

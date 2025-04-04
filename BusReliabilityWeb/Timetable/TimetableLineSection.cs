@@ -17,7 +17,9 @@ namespace BusReliabilityWeb.Timetable
             }
             Track = [.. track];
 
-            Dictionary<(DayOfWeek dow, int hour), int> usageDict = [];
+            Dictionary<(DayOfWeek dow, int hour), int> usageDict = Enum.GetValues<DayOfWeek>()
+                .SelectMany(dow => Enumerable.Range(5, 28 - 5).Select(hour => (dow, hour)))
+                .ToDictionary(t => t, t => 0);
             foreach (Map.Route journey in journeys)
             {
                 // Does this journey go over this route section?
@@ -36,7 +38,7 @@ namespace BusReliabilityWeb.Timetable
                         int hour = time < new TimeOnly(04, 00) ? time.Hour + 24 : time.Hour;
 
                         if (!usageDict.TryGetValue((date.DayOfWeek, hour), out int count))
-                            count = 0;
+                            continue;
                         usageDict[(date.DayOfWeek, hour)] = count + 1;
                     }
                 }
