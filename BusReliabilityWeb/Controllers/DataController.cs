@@ -12,12 +12,14 @@ namespace BusReliabilityWeb.Controllers
     public class DataController : ControllerBase
     {
         private readonly ILogger<DataController> logger;
+        private readonly IConfiguration configuration;
         private readonly DbController dbController;
         private readonly TimetableFileManager timetableFileManager;
 
-        public DataController(ILogger<DataController> logger, DbController dbController, TimetableFileManager timetableFileManager)
+        public DataController(ILogger<DataController> logger, IConfiguration configuration, DbController dbController, TimetableFileManager timetableFileManager)
         {
             this.logger = logger;
+            this.configuration = configuration;
             this.dbController = dbController;
             this.timetableFileManager = timetableFileManager;
         }
@@ -25,8 +27,15 @@ namespace BusReliabilityWeb.Controllers
         [HttpGet]
         public async Task<IActionResult> Get(CancellationToken cancellationToken)
         {
+            // Check if we have a date override in the config
+            string? timetableDateStr = configuration.GetValue<string>("VisualisationDateOverride");
+            if (string.IsNullOrEmpty(timetableDateStr) || !DateOnly.TryParse(timetableDateStr, out DateOnly timetableDate))
+            {
+                timetableDate = Util.GmtNowDate;
+            }
+            // Build all line data
             Dictionary<string, DataLine> lines = [];
-            foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(Util.GmtNowDate).SelectMany(s => s.Lines))
+            foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(timetableDate).SelectMany(s => s.Lines))
             {
                 LatenessValue[] latenessValues = await dbController.GetLatenessValuesForLine(line.ServiceCode, line.LineId, cancellationToken);
                 Dictionary<string, DataBusStop> stops = [];
