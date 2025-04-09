@@ -50,7 +50,8 @@ namespace BusReliabilityWeb
                 logger.LogDebug("Waiting for {waitTime:hh\\:mm\\:ss} time", timeToWait);
                 await Task.Delay(timeToWait, stoppingToken);
 
-                await ProcessData(Util.GmtNowDate.AddDays(-1), stoppingToken);
+                if (configuration.GetValue("DoDataProcessing", true))
+                    await ProcessData(Util.GmtNowDate.AddDays(-1), stoppingToken);
 
                 // Process deferred dates
                 foreach (string dateStr in configuration.GetSection("LatenessCalc:Deferred").Get<string[]>() ?? [])
