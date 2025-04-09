@@ -4,7 +4,7 @@
     position: fixed;
     display: grid;
     grid-template-columns: [map-start] 1fr [map-end lines-start] fit-content(80%) [lines-end];
-    grid-template-rows: [map-start] 1fr [map-end timerange-start] 4rem [timerange-end];
+    grid-template-rows: [map-start] 1fr [map-end timerange-start] 5.5rem [timerange-end];
     grid-template-areas:
         "map lines"
         "timerange lines";
@@ -12,16 +12,22 @@
     padding: 8px;
 }
 
+.section-label {
+    margin-bottom: 0.5rem;
+}
+
 #map {
     grid-area: map;
 }
 
-#lines {
-    grid-area: lines;
+.flex-column {
     display: flex;
     flex-flow: column nowrap;
     justify-content: flex-start;
-    gap: 0.5rem;
+}
+
+#lines {
+    grid-area: lines;
 }
 
 #lines-list {
@@ -38,6 +44,77 @@
 
 #timerange {
     grid-area: timerange;
+}
+
+#timerange-labels {
+    display: flex;
+    flex-flow: row nowrap;
+    justify-content: space-between;
+}
+#timerange-labels p {
+    width: 2.75rem;
+    text-align: center;
+    user-select: none;
+}
+
+#timerange-line {
+    display: flex;
+    flex-flow: row nowrap;
+    flex: 1 1 0;
+    margin: 0 1.2rem;
+    position: relative;
+    user-select: none;
+}
+
+.timerange-line-block {
+    flex: 1 1 0;
+    border-color: black;
+    border-style: solid;
+    border-width: 2px 0;
+}
+    .timerange-line-block.timerange-line-block-left {
+        border-left-width: 2px;
+        border-radius: 10px 0 0 10px;
+    }
+    .timerange-line-block.timerange-line-block-right {
+        border-right-width: 2px;
+        border-radius: 0 10px 10px 0;
+    }
+
+    .timerange-line-block.timerange-line-selected {
+        border-color: black;
+        border-width: 4px 0;
+        cursor: grab;
+    }
+        .timerange-line-block.timerange-line-selected.timerange-line-selected-left {
+            border-left-width: 4px;
+        }
+            .timerange-line-block.timerange-line-block-left.timerange-line-selected.timerange-line-selected-left {
+                border-radius: 10px 0 0 10px;
+            }
+        .timerange-line-block.timerange-line-selected.timerange-line-selected-right {
+            border-right-width: 4px;
+        }
+            .timerange-line-block.timerange-line-block-right.timerange-line-selected.timerange-line-selected-right {
+                border-radius: 0 10px 10px 0;
+            }
+    .timerange-line-block:not(.timerange-line-selected) {
+        filter: opacity(0.5)
+    }
+
+.timerange-grab {
+    position: absolute;
+    height: 100%;
+    width: 2.5%;
+    cursor: ew-resize;
+    z-index: 1;
+}
+
+.timeline-grabbing .timerange-line-block.timerange-line-selected {
+    cursor: grabbing;
+}
+.timeline-resizing .timerange-line-block {
+    cursor: ew-resize;
 }
 
 .tile-layer-greyscale {

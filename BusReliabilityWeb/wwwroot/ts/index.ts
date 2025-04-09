@@ -58,13 +58,28 @@ class BusLineSection implements DataLineSection {
     }
 }
 
+// Constants
+const MAP_GRN_LATENESS = 0;
+const MAP_RED_LATENESS = 30;
+const TIMELINE_GRN_LATENESS = 0;
+const TIMELINE_RED_LATENESS_MIN = 400;
+
 // References to elements
 const linesList: HTMLDivElement = document.getElementById("lines-list") as HTMLDivElement;
 const lineEles: { [name: string]: HTMLInputElement; } = {};
+const timelineEle: HTMLDivElement = document.getElementById("timerange-line") as HTMLDivElement;
+const tlGrabLeft: HTMLDivElement = document.querySelector("#timerange-line .timerange-grab.timerange-grab-left") as HTMLDivElement;
+const tlGrabRight: HTMLDivElement = document.querySelector("#timerange-line .timerange-grab.timerange-grab-right") as HTMLDivElement;
+const tlBlocks: NodeListOf<HTMLDivElement> = document.querySelectorAll("#timerange-line .timerange-line-block") as NodeListOf<HTMLDivElement>;
 
 // Data
 let data: BusData | null = null;
 let currentLine: string | null = "all";
+let tlRangeLeft: number = 12;
+let tlRangeRight: number = 18;
+let tlIsResizingLeft: boolean | null;
+let tlGrabbingStartX: number | null = null;
+let tlGrabbingStartLeft: number | null = null;
 
 // Create map
 const map: L.Map = L.map("map").setView([51.3776019, -2.3567216], 14);
@@ -113,10 +128,14 @@ map.on("zoomend", (ev) => {
     }
 });
 
+tlGrabLeft.addEventListener("pointerdown", onResizeStart);
+tlGrabRight.addEventListener("pointerdown", onResizeStart);
+
 async function init(): Promise<void> {
     await initData();
     initLines();
     redrawMap();
+    redrawTimeline(true);
 }
 
 async function initData(): Promise<void> {
@@ -167,6 +186,7 @@ function onLineChange(this: HTMLInputElement, ev: Event): any {
     }
     currentLine = this.checked ? lineId : null;
     redrawMap();
+    redrawTimeline(true);
 }
 
 function redrawMap(): void {
@@ -195,7 +215,7 @@ function redrawMap(): void {
             // Get lateness values for both end of the line
             let fromTotal = 0;
             let fromLateness = lineSection.fromStopPoint.latenessValues
-                .filter(dl => dl.date.getDay() != 0 && dl.date.getDay() != 6 && dl.hour >= 12 && dl.hour < 18)
+                .filter(dl => isValidDate(dl.date) && dl.hour >= tlRangeLeft && dl.hour < tlRangeRight)
                 .map(dl => dl.lateness)
                 .reduce((accumulator, current) => {
                     if (current !== null) {
@@ -206,7 +226,7 @@ function redrawMap(): void {
                 }, 0);
             let toTotal = 0;
             let toLateness = lineSection.toStopPoint.latenessValues
-                .filter(dl => dl.date.getDay() != 0 && dl.date.getDay() != 6 && dl.hour >= 12 && dl.hour < 18)
+                .filter(dl => isValidDate(dl.date) && dl.hour >= tlRangeLeft && dl.hour < tlRangeRight)
                 .map(dl => dl.lateness)
                 .reduce((accumulator, current) => {
                     if (current !== null) {
@@ -237,11 +257,11 @@ function redrawMap(): void {
                 let colour: string | null = null;
                 if (fromLateness !== null && toLateness !== null) {
                     let proportion = (i + 1) / (lineSection.track.length + 1);
-                    colour = latenessToColour(((1 - proportion) * fromLateness) + (proportion * toLateness));
+                    colour = latenessToColour(((1 - proportion) * fromLateness) + (proportion * toLateness), MAP_GRN_LATENESS, MAP_RED_LATENESS);
                 } else if (fromLateness !== null) {
-                    colour = latenessToColour(fromLateness);
+                    colour = latenessToColour(fromLateness, MAP_GRN_LATENESS, MAP_RED_LATENESS);
                 } else if (toLateness !== null) {
-                    colour = latenessToColour(toLateness);
+                    colour = latenessToColour(toLateness, MAP_GRN_LATENESS, MAP_RED_LATENESS);
                 }
                 if (colour === null)
                     continue; // Should be impossible
@@ -262,10 +282,8 @@ function redrawMap(): void {
     }
 }
 
-function latenessToColour(lateness: number): string {
-    const GRN = 0;
-    const RED = 30;
-    const hue = Math.max(0, Math.min(120, 120 - ((lateness - GRN) / (RED - GRN)) * 120));
+function latenessToColour(lateness: number, greenLateness: number, redLateness: number): string {
+    const hue = Math.max(0, Math.min(120, 120 - ((lateness - greenLateness) / (redLateness - greenLateness)) * 120));
     return `hsl(${hue}, 100%, 50%)`;
 }
 
@@ -275,12 +293,203 @@ function usageToOpacity(averageUsage: number, maxUsage: number): number {
 }
 
 function isValidUsageValue(usage: DataLineUsage): boolean {
-    return usage.hour >= 12 && usage.hour < 18 && (
-        usage.dayOfWeek === DayOfWeek.Monday ||
-        usage.dayOfWeek === DayOfWeek.Tuesday ||
-        usage.dayOfWeek === DayOfWeek.Wednesday ||
-        usage.dayOfWeek === DayOfWeek.Thursday ||
-        usage.dayOfWeek === DayOfWeek.Friday);
+    return usage.hour >= tlRangeLeft && usage.hour < tlRangeRight && isValidDayOfWeek(usage.dayOfWeek);
+}
+
+function isValidDayOfWeek(dayOfWeek: DayOfWeek): boolean {
+    return dayOfWeek === DayOfWeek.Monday ||
+        dayOfWeek === DayOfWeek.Tuesday ||
+        dayOfWeek === DayOfWeek.Wednesday ||
+        dayOfWeek === DayOfWeek.Thursday ||
+        dayOfWeek === DayOfWeek.Friday;
+}
+
+function isValidDate(date: Date): boolean {
+    return date.getDay() !== 0 && date.getDay() !== 6;
+}
+
+function getNumDaysPerWeek(): number {
+    return 5;
+}
+
+function onResizeStart(this: HTMLDivElement, ev: PointerEvent): void {
+    const isLeft: boolean = this === tlGrabLeft;
+    if (!isLeft && this !== tlGrabRight) return; // Safety check
+    tlIsResizingLeft = isLeft;
+    window.addEventListener("pointermove", onResizeMove);
+    window.addEventListener("pointerup", onResizeEnd);
+    window.addEventListener("pointercancel", onResizeEnd);
+    timelineEle.classList.add("timeline-resizing");
+}
+
+function onResizeMove(this: Window, ev: PointerEvent): void {
+    if (tlIsResizingLeft === null) return // Safety check
+    const blockXs: number[] = [];
+    for (const blockEle of tlBlocks) {
+        const rect = blockEle.getBoundingClientRect()
+        blockXs.push(rect.left);
+    }
+    blockXs.push(tlBlocks[tlBlocks.length - 1].getBoundingClientRect().right);
+    // Find target block to drag to
+    let closestBlockIndex: number = 0;
+    let closestBlockDistance: number = Infinity;
+    for (const [blockIndex, blockX] of blockXs.entries()) {
+        const blockDistance = Math.abs(blockX - ev.clientX);
+        if (blockDistance < closestBlockDistance) {
+            closestBlockDistance = blockDistance;
+            closestBlockIndex = blockIndex;
+        }
+    }
+    let targetHour: number = closestBlockIndex + 5;
+    // Continue if we're not already at target block
+    if (targetHour === (tlIsResizingLeft ? tlRangeLeft : tlRangeRight)) {
+        return;
+    }
+    if (tlIsResizingLeft && targetHour >= tlRangeRight)
+        return; // Past right side
+    if (!tlIsResizingLeft && targetHour <= tlRangeLeft)
+        return; // Past left side
+    if (tlIsResizingLeft)
+        tlRangeLeft = targetHour;
+    else
+        tlRangeRight = targetHour;
+    redrawTimeline(false);
+    redrawMap();
+}
+
+function onResizeEnd(this: Window, ev: PointerEvent): void {
+    window.removeEventListener("pointermove", onResizeMove);
+    window.removeEventListener("pointerup", onResizeEnd);
+    window.removeEventListener("pointercancel", onResizeEnd);
+    tlIsResizingLeft = null;
+    timelineEle.classList.remove("timeline-resizing");
+}
+
+function onGrabStart(this: HTMLDivElement, ev: PointerEvent): void {
+    tlGrabbingStartX = ev.clientX;
+    tlGrabbingStartLeft = tlRangeLeft;
+    window.addEventListener("pointermove", onGrabMove);
+    window.addEventListener("pointerup", onGrabEnd);
+    window.addEventListener("pointercancel", onGrabEnd);
+    timelineEle.classList.add("timeline-grabbing");
+}
+
+function onGrabMove(this: Window, ev: PointerEvent): void {
+    if (tlGrabbingStartX === null || tlGrabbingStartLeft === null) return; // Safety check
+    const pxPerBlock: number = tlBlocks[0].getBoundingClientRect().width;
+    const blockShift: number = ~~((ev.clientX - tlGrabbingStartX) / pxPerBlock);
+    const newLeft: number = Math.min(Math.max(tlGrabbingStartLeft + blockShift, 5), 28 - (tlRangeRight - tlRangeLeft));
+    if (newLeft === tlRangeLeft)
+        return;
+    tlRangeRight = newLeft + (tlRangeRight - tlRangeLeft);
+    tlRangeLeft = newLeft;
+    redrawTimeline(false);
+    redrawMap();
+}
+
+function onGrabEnd(this: Window, ev: PointerEvent): void {
+    window.removeEventListener("pointermove", onGrabMove);
+    window.removeEventListener("pointerup", onGrabEnd);
+    window.removeEventListener("pointercancel", onGrabEnd);
+    tlGrabbingStartX = null;
+    tlGrabbingStartLeft = null;
+    timelineEle.classList.remove("timeline-grabbing");
+}
+
+function redrawTimeline(updateColour: boolean): void {
+    // Remove event handlers on existing selected items
+    (document.querySelectorAll("#timerange-line .timerange-line-selected") as NodeListOf<HTMLDivElement>).forEach(ele => ele.removeEventListener("pointerdown", onGrabStart));
+    // Update classes of blocks
+    for (const blockEle of tlBlocks) {
+        blockEle.classList.remove("timerange-line-selected", "timerange-line-selected-left", "timerange-line-selected-right");
+        const blockHour: number = parseInt(blockEle.getAttribute("hour")!);
+        if (blockHour >= tlRangeLeft && blockHour < tlRangeRight)
+            blockEle.classList.add("timerange-line-selected");
+        if (blockHour === tlRangeLeft)
+            blockEle.classList.add("timerange-line-selected-left");
+        if (blockHour === tlRangeRight - 1)
+            blockEle.classList.add("timerange-line-selected-right");
+    }
+    // Update grabber position
+    tlGrabLeft.style.left = `calc(${(tlRangeLeft - 5) / 23 * 100}% - 1.2rem)`;
+    tlGrabRight.style.left = `calc(${(tlRangeRight - 5) / 23 * 100}% - 1.2rem)`;
+    // Add event handlers for new selected items
+    (document.querySelectorAll("#timerange-line .timerange-line-selected") as NodeListOf<HTMLDivElement>).forEach(ele => ele.addEventListener("pointerdown", onGrabStart));
+    // Update colour of timeline
+    if (!updateColour || data === null)
+        return;
+    const activeLines: BusLine[] = currentLine === null ? [] : (currentLine === "all" ? Object.keys(data.lines).map(k => data!.lines[k]) : [data.lines[currentLine]]);
+    const hourlyLateness: Map<number, number> = new Map();
+    // Get lateness values for each hour
+    for (const line of activeLines) {
+        // Calculate how much each stop is used each hour
+        const stopUsage: Map<string, Map<number, number>> = new Map();
+        for (const lineSection of line.lineSections) {
+            const fromUsage = stopUsage.get(lineSection.fromStopPointRef) ?? new Map<number, number>();
+            const toUsage = stopUsage.get(lineSection.toStopPointRef) ?? new Map<number, number>();
+            for (const usage of lineSection.usage) {
+                if (!isValidDayOfWeek(usage.dayOfWeek))
+                    continue;
+                const fromHourlyUsage = fromUsage.get(usage.hour) ?? 0;
+                fromUsage.set(usage.hour, fromHourlyUsage + (usage.busesPerHour) / getNumDaysPerWeek());
+                const toHourlyUsage = toUsage.get(usage.hour) ?? 0;
+                toUsage.set(usage.hour, toHourlyUsage + (usage.busesPerHour / getNumDaysPerWeek()));
+            }
+            stopUsage.set(lineSection.fromStopPointRef, fromUsage);
+            stopUsage.set(lineSection.toStopPointRef, toUsage);
+        }
+        // Calculate sum of usage per hour
+        const hourlyUsageSum: Map<number, number> = new Map();
+        for (const stopHourlyUsage of stopUsage.values()) {
+            for (const [hour, usage] of stopHourlyUsage.entries()) {
+                const existingUsageSum = hourlyUsageSum.get(hour) ?? 0;
+                hourlyUsageSum.set(hour, existingUsageSum + usage);
+            }
+        }
+        // Calculate average lateness for each hour, weighted by usage
+        const hourlyLatenessLine: Map<number, number[]> = new Map();
+        for (const stopPointRef of Object.keys(line.busStops)) {
+            const busStop = line.busStops[stopPointRef];
+            const hourlyUsage = stopUsage.get(busStop.stopPointRef);
+            if (hourlyUsage === undefined)
+                continue; // No usage for this stop
+            for (const latenessVal of busStop.latenessValues) {
+                if (latenessVal.lateness == null || !isValidDate(latenessVal.date))
+                    continue;
+                const usage = hourlyUsage.get(latenessVal.hour);
+                const usageSumForHour = hourlyUsageSum.get(latenessVal.hour);
+                if (usage === undefined || usage === 0 || usageSumForHour === undefined || usageSumForHour === 0)
+                    continue; // No usage for this hour
+                const latenessArr = hourlyLatenessLine.get(latenessVal.hour) ?? [];
+                latenessArr.push(latenessVal.lateness * (usage / usageSumForHour));
+                hourlyLatenessLine.set(latenessVal.hour, latenessArr);
+            }
+        }
+        // Add average of hourly lateness to final values
+        for (let hour = 5; hour < 28; hour++) {
+            const latenessArr = hourlyLatenessLine.get(hour) ?? [];
+            if (latenessArr.length === 0)
+                continue; // No data for this hour
+            const averageLateness = latenessArr.reduce((accumulator, current) => accumulator + current, 0);
+            const existingLateness = hourlyLateness.get(hour) ?? 0;
+            hourlyLateness.set(hour, existingLateness + averageLateness);
+        }
+    }
+    let timelineRedLateness = TIMELINE_RED_LATENESS_MIN;
+    for (const latenessVal of hourlyLateness.values()) {
+        timelineRedLateness = Math.max(timelineRedLateness, latenessVal);
+    }
+    // Set colour of timeline based on lateness
+    for (const blockEle of tlBlocks) {
+        const blockHour: number = parseInt(blockEle.getAttribute("hour")!);
+        const lateness = hourlyLateness.get(blockHour) ?? 0;
+        const prevLateness = hourlyLateness.get(blockHour - 1) ?? 0;
+        const nextLateness = hourlyLateness.get(blockHour + 1) ?? 0;
+        const colour = latenessToColour(lateness, TIMELINE_GRN_LATENESS, timelineRedLateness);
+        const prevColour = latenessToColour((prevLateness + lateness) / 2, TIMELINE_GRN_LATENESS, timelineRedLateness);
+        const nextColour = latenessToColour((nextLateness + lateness) / 2, TIMELINE_GRN_LATENESS, timelineRedLateness);
+        blockEle.style.background = `linear-gradient(to right in hsl shorter hue, ${prevColour}, ${colour} 10% 90%, ${nextColour})`;
+    }
 }
 
 init();
