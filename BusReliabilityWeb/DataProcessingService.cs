@@ -272,13 +272,18 @@ namespace BusReliabilityWeb
                         TimeSpan? actualWaitTime = CalculateAverageWaitTime(actualTimes, from, from.AddHours(1));
                         if (!actualWaitTime.HasValue)
                         {
-                            // No actual buses, assume actual wait time is time until 5am
-                            TimeSpan timeUntil5am = new TimeOnly(05, 00).ToTimeSpan() - hour.ToTimeSpan();
-                            if (timeUntil5am <= TimeSpan.Zero)
-                                timeUntil5am += TimeSpan.FromDays(1);
-                            actualWaitTime = (timeUntil5am / 2) * timeUntil5am.TotalMinutes;
+                            lateness = null; // No actual buses, so no lateness (I think this is fine?)
+
+                            //// No actual buses, assume actual wait time is time until 5am
+                            //TimeSpan timeUntil5am = new TimeOnly(05, 00).ToTimeSpan() - hour.ToTimeSpan();
+                            //if (timeUntil5am <= TimeSpan.Zero)
+                            //    timeUntil5am += TimeSpan.FromDays(1);
+                            //actualWaitTime = (timeUntil5am / 2) * timeUntil5am.TotalMinutes;
                         }
-                        lateness = (actualWaitTime.Value - plannedWaitTime.Value).TotalMinutes;
+                        else
+                        {
+                            lateness = (actualWaitTime.Value - plannedWaitTime.Value).TotalMinutes;
+                        }
                     }
 
                     lvsToAdd.Add(new(serviceCode, lineId, naptan, date, hour.Hour + (24 * wrappedDays), lateness));
