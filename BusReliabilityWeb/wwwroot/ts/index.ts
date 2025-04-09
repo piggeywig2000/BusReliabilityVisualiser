@@ -65,6 +65,7 @@ const TIMELINE_GRN_LATENESS = 0;
 const TIMELINE_RED_LATENESS_MIN = 400;
 
 // References to elements
+const dowSelectEle: HTMLSelectElement = document.getElementById("dow-select") as HTMLSelectElement;
 const linesList: HTMLDivElement = document.getElementById("lines-list") as HTMLDivElement;
 const lineEles: { [name: string]: HTMLInputElement; } = {};
 const timelineEle: HTMLDivElement = document.getElementById("timerange-line") as HTMLDivElement;
@@ -74,6 +75,7 @@ const tlBlocks: NodeListOf<HTMLDivElement> = document.querySelectorAll("#timeran
 
 // Data
 let data: BusData | null = null;
+let currentDowPick: string = "weekdays";
 let currentLine: string | null = "all";
 let tlRangeLeft: number = 12;
 let tlRangeRight: number = 18;
@@ -134,6 +136,7 @@ tlGrabRight.addEventListener("pointerdown", onResizeStart);
 async function init(): Promise<void> {
     await initData();
     initLines();
+    initDowPicker();
     redrawMap();
     redrawTimeline(true);
 }
@@ -156,6 +159,14 @@ function initLines(): void {
     });
 
     lineEles["all"].checked = true;
+}
+
+function initDowPicker(): void {
+    dowSelectEle.addEventListener("change", (ev: Event) => {
+        currentDowPick = dowSelectEle.value;
+        redrawMap();
+        redrawTimeline(true);
+    });
 }
 
 function createLineElement(name: string, id: string): void {
@@ -297,19 +308,37 @@ function isValidUsageValue(usage: DataLineUsage): boolean {
 }
 
 function isValidDayOfWeek(dayOfWeek: DayOfWeek): boolean {
-    return dayOfWeek === DayOfWeek.Monday ||
-        dayOfWeek === DayOfWeek.Tuesday ||
-        dayOfWeek === DayOfWeek.Wednesday ||
-        dayOfWeek === DayOfWeek.Thursday ||
-        dayOfWeek === DayOfWeek.Friday;
+    switch (currentDowPick) {
+        case "weekdays":
+            return dayOfWeek === DayOfWeek.Monday ||
+                dayOfWeek === DayOfWeek.Tuesday ||
+                dayOfWeek === DayOfWeek.Wednesday ||
+                dayOfWeek === DayOfWeek.Thursday ||
+                dayOfWeek === DayOfWeek.Friday;
+        case "saturdays":
+            return dayOfWeek === DayOfWeek.Saturday;
+        case "sundays":
+            return dayOfWeek === DayOfWeek.Sunday;
+        default:
+            return false;
+    }
 }
 
 function isValidDate(date: Date): boolean {
-    return date.getDay() !== 0 && date.getDay() !== 6;
+    switch (currentDowPick) {
+        case "weekdays":
+            return date.getDay() >= 1 && date.getDay() <= 5;
+        case "saturdays":
+            return date.getDay() === 6;
+        case "sundays":
+            return date.getDay() === 0;
+        default:
+            return false;
+    }
 }
 
 function getNumDaysPerWeek(): number {
-    return 5;
+    return currentDowPick === "weekdays" ? 5 : 1;
 }
 
 function onResizeStart(this: HTMLDivElement, ev: PointerEvent): void {

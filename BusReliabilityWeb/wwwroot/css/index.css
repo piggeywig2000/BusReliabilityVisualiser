@@ -4,8 +4,9 @@
     position: fixed;
     display: grid;
     grid-template-columns: [map-start] 1fr [map-end lines-start] fit-content(80%) [lines-end];
-    grid-template-rows: [map-start] 1fr [map-end timerange-start] 5.5rem [timerange-end];
+    grid-template-rows: [dowpick-start] 1.5rem [dowpick-end map-start] 1fr [map-end timerange-start] 5.5rem [timerange-end];
     grid-template-areas:
+        "dowpick lines"
         "map lines"
         "timerange lines";
     gap: 8px 8px;
@@ -14,6 +15,14 @@
 
 .section-label {
     margin-bottom: 0.5rem;
+}
+
+#dowpick {
+    grid-area: dowpick;
+    display: flex;
+    flex-flow: row nowrap;
+    justify-content: flex-start;
+    gap: 0.5rem;
 }
 
 #map {
