@@ -104,6 +104,7 @@ L.tileLayer(`https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.pn
 }).addTo(map); // Stadia maps layer no key
 
 let linesLayer: L.LayerGroup<any> = L.layerGroup().addTo(map);
+let stopsLayer: L.LayerGroup<any> = L.layerGroup().addTo(map);
 
 map.on("zoomend", (ev) => {
     let currentZoomLevel = map.getZoom();
@@ -205,6 +206,8 @@ function redrawMap(): void {
 
     map.removeLayer(linesLayer);
     linesLayer = L.layerGroup().addTo(map);
+    map.removeLayer(stopsLayer);
+    stopsLayer = L.layerGroup().addTo(map);
 
     const activeLines: BusLine[] = currentLine === null ? [] : (currentLine === "all" ? Object.keys(data.lines).map(k => data!.lines[k]) : [data.lines[currentLine]]);
 
@@ -286,9 +289,73 @@ function redrawMap(): void {
                         weight: 6,
                         offset: -3,
                         lineCap: map.getZoom() >= LINE_STYLE_ZOOM_THRESHOLD ? "butt" : "round",
-                        className: "leaflet-bus-line"
+                        className: "leaflet-bus-line",
+                        interactive: false
                     }).addTo(linesLayer);
             }
+        }
+    }
+
+    if (activeLines.length === 1) {
+        const line = activeLines[0];
+        for (const stopPointRef of Object.keys(line.busStops)) {
+            const busStop = line.busStops[stopPointRef];
+
+            // Calculate lateness value for bus stop
+            const validLatenesses = busStop.latenessValues
+                .filter(lv => lv.lateness !== null && isValidDate(lv.date) && lv.hour >= tlRangeLeft && lv.hour < tlRangeRight)
+                .map(lv => lv.lateness!);
+            if (validLatenesses.length === 0)
+                continue; // Stop point has no lateness
+            const lateness = validLatenesses.reduce((acc, cur) => acc + cur) / validLatenesses.length;
+
+            // Find position of bus stop
+            const locations = [
+                ...line.lineSections
+                    .filter(ls => ls.fromStopPointRef === busStop.stopPointRef)
+                    .map(ls => ls.track[0]),
+                ...line.lineSections
+                    .filter(ls => ls.toStopPointRef === busStop.stopPointRef)
+                    .map(ls => ls.track[ls.track.length - 1])
+            ];
+            let location = getAverageLocation(locations);
+            const prevLocations = line.lineSections
+                .filter(ls => ls.toStopPointRef === busStop.stopPointRef)
+                .map(ls => ls.track[ls.track.length - 2]);
+            const prevLocation = prevLocations.length > 0 ? getAverageLocation(prevLocations) : location;
+            const nextLocations = line.lineSections
+                .filter(ls => ls.fromStopPointRef === busStop.stopPointRef)
+                .map(ls => ls.track[1]);
+            const nextLocation = nextLocations.length > 0 ? getAverageLocation(nextLocations) : location;
+            const bearing = (getBearingFromPoints(prevLocation, nextLocation) - 90 + 360) % 360; // Re-orient direction to point left
+            location = offsetLocationByMetersInDirection(location, bearing, 10);
+
+            // Calculate usage
+            let maxAverageUsageForStop = 0;
+            for (const lineSection of line.lineSections.filter(ls => ls.fromStopPointRef === busStop.stopPointRef || ls.toStopPointRef === busStop.stopPointRef)) {
+                const busPerHoursEntries = lineSection.usage
+                    .filter(isValidUsageValue)
+                    .map(ele => ele.busesPerHour);
+                const averageUsage = busPerHoursEntries.reduce((accumulator, current) => accumulator + current, 0) / busPerHoursEntries.length;
+                maxAverageUsageForStop = Math.max(maxAverageUsageForStop, averageUsage);
+            }
+            if (maxAverageUsageForStop === 0)
+                continue; // Stop point has lateness value but never actually gets used this hour
+
+            L.circleMarker([location.latitude, location.longitude],
+                {
+                    radius: 6,
+                    fill: true,
+                    fillColor: latenessToColour(lateness, MAP_GRN_LATENESS, MAP_RED_LATENESS),
+                    //fillOpacity: usageToOpacity(maxAverageUsageForStop, maxUsage),
+                    //opacity: usageToOpacity(maxAverageUsageForStop, maxUsage),
+                    fillOpacity: 1,
+                    opacity: 1,
+                    color: "black",
+                    weight: 2
+                })
+                .bindTooltip(`<b>${busStop.name}</b><br>Average lateness: ${lateness.toFixed(1)}`)
+                .addTo(stopsLayer);
         }
     }
 }
@@ -339,6 +406,48 @@ function isValidDate(date: Date): boolean {
 
 function getNumDaysPerWeek(): number {
     return currentDowPick === "weekdays" ? 5 : 1;
+}
+
+function getAverageLocation(locs: DataTrack[]): DataTrack {
+    let location: DataTrack = locs.reduce((acc, cur) => { return { longitude: acc.longitude + cur.longitude, latitude: acc.latitude + cur.latitude } });
+    location = { longitude: location.longitude / locs.length, latitude: location.latitude / locs.length };
+    return location;
+}
+
+function degToRad(degrees: number): number {
+    return (degrees * Math.PI) / 180;
+}
+
+function radToDeg(radians: number): number {
+    return (radians * 180) / Math.PI;
+}
+
+// https://www.movable-type.co.uk/scripts/latlong.html#bearing for maths
+function getBearingFromPoints(from: DataTrack, to: DataTrack): number {
+    const lat1 = degToRad(from.latitude);
+    const lat2 = degToRad(to.latitude);
+    const dLon = degToRad(to.longitude - from.longitude);
+
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+    const bearing = Math.atan2(y, x);
+    return (radToDeg(bearing) + 360) % 360;
+}
+
+// https://www.movable-type.co.uk/scripts/latlong.html#rhumblines for maths
+function offsetLocationByMetersInDirection(loc: DataTrack, bearing: number, meters: number): DataTrack {
+    const R = 6371000; // Earth radius in meters
+    const d = meters;
+    const brng = degToRad(bearing);
+
+    const lat1 = degToRad(loc.latitude);
+    const lon1 = degToRad(loc.longitude);
+
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) + Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng));
+    const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1), Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
+
+    return { longitude: radToDeg(lon2), latitude: radToDeg(lat2) }
 }
 
 function onResizeStart(this: HTMLDivElement, ev: PointerEvent): void {
