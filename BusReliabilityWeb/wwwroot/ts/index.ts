@@ -60,9 +60,10 @@ class BusLineSection implements DataLineSection {
 
 // Constants
 const MAP_GRN_LATENESS = 0;
-const MAP_RED_LATENESS = 30;
+const MAP_RED_LATENESS = 40;
 const TIMELINE_GRN_LATENESS = 0;
-const TIMELINE_RED_LATENESS_MIN = 400;
+const TIMELINE_RED_LATENESS_ALL = 1500;
+const TIMELINE_RED_LATENESS_SINGLE = 200;
 
 // References to elements
 const dowSelectEle: HTMLSelectElement = document.getElementById("dow-select") as HTMLSelectElement;
@@ -140,6 +141,7 @@ async function init(): Promise<void> {
     initDowPicker();
     redrawMap();
     redrawTimeline(true);
+    document.getElementById("loading-background")?.style.setProperty("display", "none");
 }
 
 async function initData(): Promise<void> {
@@ -341,16 +343,15 @@ function redrawMap(): void {
             }
             if (maxAverageUsageForStop === 0)
                 continue; // Stop point has lateness value but never actually gets used this hour
+            let opacity = maxAverageUsageForStop / maxUsage;
 
             L.circleMarker([location.latitude, location.longitude],
                 {
                     radius: 6,
                     fill: true,
                     fillColor: latenessToColour(lateness, MAP_GRN_LATENESS, MAP_RED_LATENESS),
-                    //fillOpacity: usageToOpacity(maxAverageUsageForStop, maxUsage),
-                    //opacity: usageToOpacity(maxAverageUsageForStop, maxUsage),
-                    fillOpacity: 1,
-                    opacity: 1,
+                    fillOpacity: opacity,
+                    opacity: opacity,
                     color: "black",
                     weight: 2
                 })
@@ -562,14 +563,14 @@ function redrawTimeline(updateColour: boolean): void {
     for (const line of activeLines) {
         // Calculate how much each stop is used each hour
         const stopUsage: Map<string, Map<number, number>> = new Map();
-        for (const lineSection of line.lineSections) {
+        for (const lineSection of line.lineSections) { // For each line section
             const fromUsage = stopUsage.get(lineSection.fromStopPointRef) ?? new Map<number, number>();
             const toUsage = stopUsage.get(lineSection.toStopPointRef) ?? new Map<number, number>();
-            for (const usage of lineSection.usage) {
+            for (const usage of lineSection.usage) { // For each usage item in the line section
                 if (!isValidDayOfWeek(usage.dayOfWeek))
                     continue;
                 const fromHourlyUsage = fromUsage.get(usage.hour) ?? 0;
-                fromUsage.set(usage.hour, fromHourlyUsage + (usage.busesPerHour) / getNumDaysPerWeek());
+                fromUsage.set(usage.hour, fromHourlyUsage + (usage.busesPerHour / getNumDaysPerWeek()));
                 const toHourlyUsage = toUsage.get(usage.hour) ?? 0;
                 toUsage.set(usage.hour, toHourlyUsage + (usage.busesPerHour / getNumDaysPerWeek()));
             }
@@ -578,8 +579,8 @@ function redrawTimeline(updateColour: boolean): void {
         }
         // Calculate sum of usage per hour
         const hourlyUsageSum: Map<number, number> = new Map();
-        for (const stopHourlyUsage of stopUsage.values()) {
-            for (const [hour, usage] of stopHourlyUsage.entries()) {
+        for (const stopHourlyUsage of stopUsage.values()) { // For each stop
+            for (const [hour, usage] of stopHourlyUsage.entries()) { // For each hour in the stop
                 const existingUsageSum = hourlyUsageSum.get(hour) ?? 0;
                 hourlyUsageSum.set(hour, existingUsageSum + usage);
             }
@@ -599,7 +600,7 @@ function redrawTimeline(updateColour: boolean): void {
                 if (usage === undefined || usage === 0 || usageSumForHour === undefined || usageSumForHour === 0)
                     continue; // No usage for this hour
                 const latenessArr = hourlyLatenessLine.get(latenessVal.hour) ?? [];
-                latenessArr.push(latenessVal.lateness * (usage / usageSumForHour));
+                latenessArr.push((latenessVal.lateness * (usage / usageSumForHour)) / getNumDaysPerWeek());
                 hourlyLatenessLine.set(latenessVal.hour, latenessArr);
             }
         }
@@ -613,19 +614,15 @@ function redrawTimeline(updateColour: boolean): void {
             hourlyLateness.set(hour, existingLateness + averageLateness);
         }
     }
-    let timelineRedLateness = TIMELINE_RED_LATENESS_MIN;
-    for (const latenessVal of hourlyLateness.values()) {
-        timelineRedLateness = Math.max(timelineRedLateness, latenessVal);
-    }
     // Set colour of timeline based on lateness
     for (const blockEle of tlBlocks) {
         const blockHour: number = parseInt(blockEle.getAttribute("hour")!);
         const lateness = hourlyLateness.get(blockHour) ?? 0;
         const prevLateness = hourlyLateness.get(blockHour - 1) ?? 0;
         const nextLateness = hourlyLateness.get(blockHour + 1) ?? 0;
-        const colour = latenessToColour(lateness, TIMELINE_GRN_LATENESS, timelineRedLateness);
-        const prevColour = latenessToColour((prevLateness + lateness) / 2, TIMELINE_GRN_LATENESS, timelineRedLateness);
-        const nextColour = latenessToColour((nextLateness + lateness) / 2, TIMELINE_GRN_LATENESS, timelineRedLateness);
+        const colour = latenessToColour(lateness, TIMELINE_GRN_LATENESS, activeLines.length > 1 ? TIMELINE_RED_LATENESS_ALL : TIMELINE_RED_LATENESS_SINGLE);
+        const prevColour = latenessToColour((prevLateness + lateness) / 2, TIMELINE_GRN_LATENESS, activeLines.length > 1 ? TIMELINE_RED_LATENESS_ALL : TIMELINE_RED_LATENESS_SINGLE);
+        const nextColour = latenessToColour((nextLateness + lateness) / 2, TIMELINE_GRN_LATENESS, activeLines.length > 1 ? TIMELINE_RED_LATENESS_ALL : TIMELINE_RED_LATENESS_SINGLE);
         blockEle.style.background = `linear-gradient(to right in hsl shorter hue, ${prevColour}, ${colour} 10% 90%, ${nextColour})`;
     }
 }

@@ -45,8 +45,8 @@ namespace BusReliabilityWeb.Timetable
             Dictionary<string, TimetableServiceGroup> newServices = [];
             foreach (string xmlPath in Directory.EnumerateFiles(fileDirectory, "*.xml", SearchOption.AllDirectories).Select(Path.GetFullPath))
             {
-                if (!Path.GetFileName(xmlPath).StartsWith("U1"))
-                    continue;
+                //if (!Path.GetFileName(xmlPath).StartsWith("U1"))
+                //    continue;
                 BodsDotNet.Schemas.TransXChange.TransXChange txc = await bodsClient.GetTransXChangeFromXmlFile(xmlPath, cancellationToken);
 
                 // Ensure that this TXC is something we can handle

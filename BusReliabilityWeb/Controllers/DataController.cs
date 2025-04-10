@@ -35,8 +35,11 @@ namespace BusReliabilityWeb.Controllers
             }
             // Build all line data
             Dictionary<string, DataLine> lines = [];
+            string[] deletedLines = ["373", "376a", "376x", "55", "OS1"]; // We don't want to bother with these lines. They're far away from Bath and quite long (laggy)
             foreach (TimetableLine line in timetableFileManager.GetAllTimetablesAtDate(timetableDate).SelectMany(s => s.Lines))
             {
+                if (Array.IndexOf(deletedLines, line.LineName) >= 0)
+                    continue; // Don't include some deleted lines
                 LatenessValue[] latenessValues = await dbController.GetLatenessValuesForLine(line.ServiceCode, line.LineId, cancellationToken);
                 Dictionary<string, DataBusStop> stops = [];
                 Dictionary<string, List<DataLateness>> naptanToLateness = [];
