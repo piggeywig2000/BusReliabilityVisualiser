@@ -22,7 +22,16 @@
 
 <div id="root">
     <div id="dowpick">
-        <h3>Day Of Week Selection:</h3>
+        <h3>Day Of Week Selection
+            <button class="button-help button-compact">
+                ?
+                <template>
+                    <h3>Day Of Week Selection</h3>
+                    <p>Select which days of the week the visualisation should show. Choose between Weekdays, Saturdays, and Sundays.</p>
+                    <p>If Saturday were selected for example, the visualisation would show the average bus lateness for every Saturday over the past month.</p>
+                </template>
+            </button>:
+        </h3>
         <select id="dow-select">
             <option value="weekdays" selected>Weekdays (Monday to Friday)</option>
             <option value="saturdays">Saturday</option>
@@ -31,11 +40,30 @@
     </div>
     <div id="map"></div>
     <div id="lines" class="flex-column">
-        <h3 class="section-label">Bus Line Selection</h3>
+        <h3 class="section-label">Bus Line Selection
+            <button class="button-help button-compact">
+                ?
+                <template>
+                    <h3>Bus Line Selection</h3>
+                    <p>Select which bus line the visualisation should show. Choose between showing all bus lines at once for a general overview, or show one specific bus line for more detail.</p>
+                    <p>If a specific bus line is selected, the visualisation also shows the bus stops. Hover over a bus stop to see its name and lateness value.</p>
+                </template>
+            </button>
+        </h3>
         <div id="lines-list"></div>
     </div>
     <div id="timerange" class="flex-column">
-        <h3 class="section-label">Time Of Day Selection</h3>
+        <h3 class="section-label">Time Of Day Selection
+            <button class="button-help button-compact">
+                ?
+                <template>
+                    <h3>Time Of Day Selection</h3>
+                    <p>Select which times of day the visualisation should show. The visualisation shows the average lateness for buses across the chosen time window.</p>
+                    <p>Drag the edges of the selection box to adjust the size of the window. Drag the middle of the selection box to move the window.</p>
+                    <p>The colour of the timeline shows the average bus lateness at specific times of day.</p>
+                </template>
+            </button>
+        </h3>
         <div id="timerange-labels">
             <p>5am</p>
             <p>6am</p>
@@ -89,5 +117,11 @@
             <div class="timerange-line-block" hour="26"></div>
             <div class="timerange-line-block timerange-line-block-right" hour="27"></div>
         </div>
+    </div>
+</div>
+<div id="popup-background" class="fullscreen-blocker" style="display: none">
+    <div id="popup" class="fullscreen-box">
+        <button id="popup-close" class="button-compact" onclick="document.getElementById('popup-background').style.display = 'none'">X</button>
+        <div id="popup-content" class="flex-column"></div>
     </div>
 </div>

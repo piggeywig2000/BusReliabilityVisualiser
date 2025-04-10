@@ -4,7 +4,7 @@
     position: fixed;
     display: grid;
     grid-template-columns: [map-start] 1fr [map-end lines-start] fit-content(80%) [lines-end];
-    grid-template-rows: [dowpick-start] 1.5rem [dowpick-end map-start] 1fr [map-end timerange-start] 5.5rem [timerange-end];
+    grid-template-rows: [dowpick-start] fit-content(20%) [dowpick-end map-start] 1fr [map-end timerange-start] 5.5rem [timerange-end];
     grid-template-areas:
         "dowpick lines"
         "map lines"
@@ -128,4 +128,21 @@
 
 .tile-layer-greyscale {
     filter: grayscale(0.8) contrast(0.2) brightness(1.6)
+}
+
+#popup {
+    max-width: 40rem;
+    padding: 1rem;
+    position: relative;
+}
+
+#popup-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    font-size: 0.9rem;
+}
+
+#popup-content {
+    gap: 1rem;
 }

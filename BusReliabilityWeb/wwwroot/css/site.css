@@ -18,3 +18,49 @@ body {
 h1, h2, h3, h4, h5, h6, p {
     margin: 0;
 }
+
+button {
+    cursor: pointer;
+}
+
+.button-help {
+    display: inline-block;
+    vertical-align: top;
+    margin-left: 0.25rem;
+    border-radius: 4rem;
+    font-size: 0.9rem;
+    border: 2px solid #0077ff;
+    background-color: white;
+    color: #0077ff;
+    font-weight: 700;
+}
+
+    .button-help:hover {
+        background-color: #e0efff;
+    }
+
+.button-compact {
+    height: 1.5em;
+    width: 1.5em;
+    text-align: center;
+    padding: 0;
+    line-height: 1em;
+}
+
+.fullscreen-blocker {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgb(255, 255, 255, 0.75);
+    z-index: 10;
+    display: grid;
+    place-items: center;
+}
+
+.fullscreen-box {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 0 0.5rem rgb(0, 0, 0);
+}
