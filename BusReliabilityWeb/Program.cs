@@ -1,6 +1,7 @@
 using BodsDotNet;
 using BusReliabilityWeb.Database;
 using BusReliabilityWeb.Timetable;
+using Microsoft.AspNetCore.HttpOverrides;
 using MySqlConnector;
 
 namespace BusReliabilityWeb
@@ -29,6 +30,16 @@ namespace BusReliabilityWeb
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
+            if (app.Environment.IsProduction())
+            {
+                app.UseForwardedHeaders(new ForwardedHeadersOptions
+                {
+                    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+                });
+
+                app.UsePathBase("/busvisualiser");
+            }
+
             if (!app.Environment.IsDevelopment())
             {
                 app.UseExceptionHandler("/Error");
